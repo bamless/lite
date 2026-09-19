@@ -1,3 +1,6 @@
+#include <assert.h>
+#include <stdalign.h>
+#include <stdint.h>
 #include <stdio.h>
 #include "rencache.h"
 
@@ -19,8 +22,25 @@ typedef struct {
   RenColor color;
   RenFont *font;
   int tab_width;
-  char text[0];
 } Command;
+
+/** returns the pointer to the text portion of a `DRAW_TEXT` command.
+ ** the text bytes are always stored after the command's last field, including its padding bytes */
+static inline char* command_text(Command* cmd) {
+  assert(cmd->type == DRAW_TEXT && "Command is not a `DRAW_TEXT` command");
+  return (char*)cmd + sizeof(Command);
+}
+
+/* returns the index of the next command inside `command_buf`, properly aligned for storing
+** a `Command` struct.
+** the stride is kept separate from a command's `size` to avoid hashing the extra
+** padding bytes between one command and the next. */
+static inline int command_stride(int size) {
+  assert(size >= 0);
+  const unsigned align = alignof(Command);
+  return (size + align - 1) & ~(align - 1);
+}
+
 
 
 static unsigned cells_buf1[CELLS_X * CELLS_Y];
@@ -28,7 +48,7 @@ static unsigned cells_buf2[CELLS_X * CELLS_Y];
 static unsigned *cells_prev = cells_buf1;
 static unsigned *cells = cells_buf2;
 static RenRect rect_buf[CELLS_X * CELLS_Y / 2];
-static char command_buf[COMMAND_BUF_SIZE];
+static alignas(Command) char command_buf[COMMAND_BUF_SIZE];
 static int command_buf_idx;
 static RenRect screen_rect;
 static bool show_debug;
@@ -79,12 +99,13 @@ static RenRect merge_rects(RenRect a, RenRect b) {
 
 static Command* push_command(int type, int size) {
   Command *cmd = (Command*) (command_buf + command_buf_idx);
-  int n = command_buf_idx + size;
+  int n = command_buf_idx + command_stride(size);
   if (n > COMMAND_BUF_SIZE) {
     fprintf(stderr, "Warning: (" __FILE__ "): exhausted command buffer\n");
     return NULL;
   }
   command_buf_idx = n;
+  assert((uintptr_t)cmd % alignof(Command) == 0 && "Command is misaligned");
   memset(cmd, 0, sizeof(Command));
   cmd->type = type;
   cmd->size = size;
@@ -96,7 +117,7 @@ static bool next_command(Command **prev) {
   if (*prev == NULL) {
     *prev = (Command*) command_buf;
   } else {
-    *prev = (Command*) (((char*) *prev) + (*prev)->size);
+    *prev = (Command*) (((char*) *prev) + command_stride((*prev)->size));
   }
   return *prev != ((Command*) (command_buf + command_buf_idx));
 }
@@ -140,7 +161,7 @@ int rencache_draw_text(RenFont *font, const char *text, int x, int y, RenColor c
     int sz = strlen(text) + 1;
     Command *cmd = push_command(DRAW_TEXT, sizeof(Command) + sz);
     if (cmd) {
-      memcpy(cmd->text, text, sz);
+      memcpy(command_text(cmd), text, sz);
       cmd->color = color;
       cmd->font = font;
       cmd->rect = rect;
@@ -172,8 +193,8 @@ void rencache_begin_frame(void) {
 static void update_overlapping_cells(RenRect r, unsigned h) {
   int x1 = r.x / CELL_SIZE;
   int y1 = r.y / CELL_SIZE;
-  int x2 = (r.x + r.width) / CELL_SIZE;
-  int y2 = (r.y + r.height) / CELL_SIZE;
+  int x2 = (r.x + r.width  - 1) / CELL_SIZE;
+  int y2 = (r.y + r.height - 1) / CELL_SIZE;
 
   for (int y = y1; y <= y2; y++) {
     for (int x = x1; x <= x2; x++) {
@@ -257,7 +278,7 @@ void rencache_end_frame(void) {
           break;
         case DRAW_TEXT:
           ren_set_font_tab_width(cmd->font, cmd->tab_width);
-          ren_draw_text(cmd->font, cmd->text, cmd->rect.x, cmd->rect.y, cmd->color);
+          ren_draw_text(cmd->font, command_text(cmd), cmd->rect.x, cmd->rect.y, cmd->color);
           break;
       }
     }
