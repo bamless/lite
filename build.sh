@@ -3,6 +3,13 @@
 cflags="-Wall -O3 -g -std=gnu11 -fno-strict-aliasing -Isrc"
 lflags="-lSDL2 -lm"
 
+if [[ $* == *release* ]]; then
+  build="release"
+  cflags="$cflags -DNDEBUG"
+else
+  build="debug"
+fi
+
 if [[ $* == *windows* ]]; then
   platform="windows"
   outfile="lite.exe"
@@ -24,7 +31,7 @@ if command -v ccache >/dev/null; then
 fi
 
 
-echo "compiling ($platform)..."
+echo "compiling ($platform, $build)..."
 for f in `find src -name "*.c"`; do
   $compiler -c $cflags $f -o "${f//\//_}.o"
   if [[ $? -ne 0 ]]; then

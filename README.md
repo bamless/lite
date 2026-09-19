@@ -26,6 +26,8 @@ The editor can be customized by making changes to the
 ## Building
 You can build the project yourself on Linux using the `build.sh` script
 or on Windows using the `build.bat` script *([MinGW](https://nuwen.net/mingw.html) is required)*.
+By default `build.sh` keeps asserts enabled; run `./build.sh release` to
+build with `NDEBUG` defined. `build.bat` always builds for release.
 Note that the project does not need to be rebuilt if you are only making changes
 to the Lua portion of the code.
 
