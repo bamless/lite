@@ -12,7 +12,7 @@
 #define CELLS_X 80
 #define CELLS_Y 50
 #define CELL_SIZE 96
-#define COMMAND_BUF_SIZE (1024 * 512)
+#define COMMAND_BUF_SIZE (1024 * 1024 * 5) /* 5Mib */
 
 enum { FREE_FONT, SET_CLIP, DRAW_TEXT, DRAW_RECT };
 
