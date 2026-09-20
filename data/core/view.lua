@@ -14,6 +14,15 @@ function View:new()
   self.scroll = { x = 0, y = 0, to = { x = 0, y = 0 } }
   self.cursor = "arrow"
   self.scrollable = false
+  self.resizable = false
+end
+
+
+-- Called while the divider of a split whose size this view controls is
+-- dragged (see `RootView:on_mouse_moved`). `axis` is "x" or "y". The view
+-- decides what to do with the value: a view whose size comes from a config
+-- entry stores it there, so the change survives the view being hidden.
+function View:set_target_size(axis, value)
 end
 
 

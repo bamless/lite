@@ -191,6 +191,22 @@ function Node:get_children(t)
 end
 
 
+-- The side of this split whose size the layout takes from its content rather
+-- than from `divider`. It can be a whole subtree, e.g. the command view and
+-- the status bar together.
+function Node:get_locked_child()
+  if self.a:get_locked_size() then return self.a end
+  if self.b:get_locked_size() then return self.b end
+end
+
+
+function Node:is_resizable()
+  local locked = self:get_locked_child()
+  if not locked then return true end
+  return locked.type == "leaf" and locked.active_view.resizable == true
+end
+
+
 function Node:get_divider_overlapping_point(px, py)
   if self.type ~= "leaf" then
     local p = 6
@@ -420,7 +436,7 @@ end
 
 function RootView:on_mouse_pressed(button, x, y, clicks)
   local div = self.root_node:get_divider_overlapping_point(x, y)
-  if div then
+  if div and div:is_resizable() then
     self.dragged_divider = div
     return
   end
@@ -449,12 +465,17 @@ end
 function RootView:on_mouse_moved(x, y, dx, dy)
   if self.dragged_divider then
     local node = self.dragged_divider
-    if node.type == "hsplit" then
-      node.divider = node.divider + dx / node.size.x
+    local axis = node.type == "hsplit" and "x" or "y"
+    local delta = axis == "x" and dx or dy
+    local locked = node:get_locked_child()
+    if locked then
+      local view = locked.active_view
+      local sign = (locked == node.a) and 1 or -1
+      view:set_target_size(axis, view.size[axis] + delta * sign)
     else
-      node.divider = node.divider + dy / node.size.y
+      node.divider = node.divider + delta / node.size[axis]
+      node.divider = common.clamp(node.divider, 0.01, 0.99)
     end
-    node.divider = common.clamp(node.divider, 0.01, 0.99)
     return
   end
 
@@ -463,7 +484,7 @@ function RootView:on_mouse_moved(x, y, dx, dy)
 
   local node = self.root_node:get_child_overlapping_point(x, y)
   local div = self.root_node:get_divider_overlapping_point(x, y)
-  if div then
+  if div and div:is_resizable() then
     system.set_cursor(div.type == "hsplit" and "sizeh" or "sizev")
   elseif node:get_tab_overlapping_point(x, y) then
     system.set_cursor("arrow")
