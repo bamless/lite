@@ -218,15 +218,20 @@ static void update_overlapping_cells(RenRect r, unsigned h) {
 
 
 static void push_rect(RenRect r, int *count) {
-  /* try to merge with existing rectangle */
-  for (int i = *count - 1; i >= 0; i--) {
-    RenRect *rp = &rect_buf[i];
-    if (rects_overlap(*rp, r)) {
-      *rp = merge_rects(*rp, r);
-      return;
+  /* Absorb every rect `r` touches. Each merge grows `r`, which can then reach
+  ** rects it didn't touch before, so rescan until nothing overlaps. */
+  bool merged;
+  do {
+    merged = false;
+    for (int i = *count - 1; i >= 0; i--) {
+      if (rects_overlap(rect_buf[i], r)) {
+        r = merge_rects(rect_buf[i], r);
+        rect_buf[i] = rect_buf[--(*count)]; /* swap-delete since the rect's order doesn't matter */
+        merged = true;
+      }
     }
-  }
-  /* couldn't merge with previous rectangle: push */
+  } while (merged);
+
   rect_buf[(*count)++] = r;
 }
 
