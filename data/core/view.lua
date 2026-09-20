@@ -62,9 +62,29 @@ function View:get_scrollbar_rect()
 end
 
 
+function View:get_h_scrollbar_rect()
+  local sz = self:get_h_scrollable_size()
+  if sz <= self.size.x or sz == math.huge then
+    return 0, 0, 0, 0
+  end
+  local w = math.max(20, self.size.x * self.size.x / sz)
+  return
+    self.position.x + self.scroll.x * (self.size.x - w) / (sz - self.size.x),
+    self.position.y + self.size.y - style.scrollbar_size,
+    w,
+    style.scrollbar_size
+end
+
+
 function View:scrollbar_overlaps_point(x, y)
   local sx, sy, sw, sh = self:get_scrollbar_rect()
   return x >= sx - sw * 3 and x < sx + sw and y >= sy and y < sy + sh
+end
+
+
+function View:h_scrollbar_overlaps_point(x, y)
+  local sx, sy, sw, sh = self:get_h_scrollbar_rect()
+  return y >= sy - sh * 3 and y < sy + sh and x >= sx and x < sx + sw
 end
 
 
@@ -72,12 +92,16 @@ function View:on_mouse_pressed(button, x, y, clicks)
   if self:scrollbar_overlaps_point(x, y) then
     self.dragging_scrollbar = true
     return true
+  elseif self:h_scrollbar_overlaps_point(x, y) then
+    self.dragging_h_scrollbar = true
+    return true
   end
 end
 
 
 function View:on_mouse_released(button, x, y)
   self.dragging_scrollbar = false
+  self.dragging_h_scrollbar = false
 end
 
 
@@ -86,7 +110,12 @@ function View:on_mouse_moved(x, y, dx, dy)
     local delta = self:get_scrollable_size() / self.size.y * dy
     self.scroll.to.y = self.scroll.to.y + delta
   end
+  if self.dragging_h_scrollbar then
+    local delta = self:get_h_scrollable_size() / self.size.x * dx
+    self.scroll.to.x = self.scroll.to.x + delta
+  end
   self.hovered_scrollbar = self:scrollbar_overlaps_point(x, y)
+  self.hovered_h_scrollbar = self:h_scrollbar_overlaps_point(x, y)
 end
 
 
@@ -95,9 +124,10 @@ function View:on_text_input(text)
 end
 
 
-function View:on_mouse_wheel(y)
+function View:on_mouse_wheel(y, x)
   if self.scrollable then
-    self.scroll.to.y = self.scroll.to.y + y * -config.mouse_wheel_scroll
+    self.scroll.to.y = self.scroll.to.y - y * config.mouse_wheel_scroll
+    self.scroll.to.x = self.scroll.to.x + (x or 0) * config.mouse_wheel_scroll
   end
 end
 
@@ -116,9 +146,21 @@ function View:get_content_offset()
 end
 
 
+function View:get_h_scrollable_size()
+  return self.size.x
+end
+
+
 function View:clamp_scroll_position()
   local max = self:get_scrollable_size() - self.size.y
   self.scroll.to.y = common.clamp(self.scroll.to.y, 0, max)
+
+  if self.scroll.to.x > 0 then
+    local hmax = self:get_h_scrollable_size() - self.size.x
+    self.scroll.to.x = common.clamp(self.scroll.to.x, 0, math.max(0, hmax))
+  else
+    self.scroll.to.x = 0
+  end
 end
 
 
@@ -140,6 +182,11 @@ function View:draw_scrollbar()
   local x, y, w, h = self:get_scrollbar_rect()
   local highlight = self.hovered_scrollbar or self.dragging_scrollbar
   local color = highlight and style.scrollbar2 or style.scrollbar
+  renderer.draw_rect(x, y, w, h, color)
+
+  x, y, w, h = self:get_h_scrollbar_rect()
+  highlight = self.hovered_h_scrollbar or self.dragging_h_scrollbar
+  color = highlight and style.scrollbar2 or style.scrollbar
   renderer.draw_rect(x, y, w, h, color)
 end
 

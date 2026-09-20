@@ -97,6 +97,26 @@ function DocView:get_scrollable_size()
 end
 
 
+function DocView:get_h_scrollable_size()
+  local min, max = self:get_visible_line_range()
+  local change_id = self.doc:get_change_id()
+  local cache = self.h_size_cache
+  if cache and cache.min == min and cache.max == max and cache.change_id == change_id then
+    return cache.size
+  end
+
+  local width = 0
+  for i = min, max do
+    local line = self.doc.lines[i]
+    width = math.max(width, self:get_col_x_offset(i, #line))
+  end
+  local size = self:get_gutter_width() + width + style.padding.x
+
+  self.h_size_cache = { min = min, max = max, change_id = change_id, size = size }
+  return size
+end
+
+
 function DocView:get_font()
   return style[self.font]
 end
@@ -238,7 +258,8 @@ end
 function DocView:on_mouse_moved(x, y, ...)
   DocView.super.on_mouse_moved(self, x, y, ...)
 
-  if self:scrollbar_overlaps_point(x, y) or self.dragging_scrollbar then
+  if self:scrollbar_overlaps_point(x, y) or self.dragging_scrollbar or
+     self:h_scrollbar_overlaps_point(x, y) or self.dragging_h_scrollbar then
     self.cursor = "arrow"
   else
     self.cursor = "ibeam"

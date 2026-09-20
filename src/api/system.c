@@ -138,8 +138,16 @@ top:
 
     case SDL_MOUSEWHEEL:
       lua_pushstring(L, "mousewheel");
+#if SDL_VERSION_ATLEAST(2, 0, 18)
+      /* the precise deltas are fractional on touchpads, which makes their
+      ** scrolling smooth; a wheel click still reports whole steps */
+      lua_pushnumber(L, e.wheel.preciseY);
+      lua_pushnumber(L, e.wheel.preciseX);
+#else
       lua_pushnumber(L, e.wheel.y);
-      return 2;
+      lua_pushnumber(L, e.wheel.x);
+#endif
+      return 3;
 
     default:
       goto top;
