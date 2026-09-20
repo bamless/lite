@@ -246,8 +246,11 @@ RootView.draw = function(...)
 
   local av = get_active_view()
   if av then
-    -- draw suggestions box after everything else
-    core.root_view:defer_draw(draw_suggestions_box, av)
+    -- The box hangs below the caret, past the doc view's bottom edge, so it has
+    -- to be drawn once the node tree is done and no clip rect is in force. We
+    -- are already at that point: `RootView:draw` has drawn the tree and flushed
+    -- its deferred draws, so the box goes straight onto the window.
+    draw_suggestions_box(av)
   end
 end
 
