@@ -24,7 +24,15 @@ function TreeView:new()
   self.scrollable = true
   self.visible = true
   self.init_size = true
+  self.resizable = true
   self.cache = {}
+end
+
+
+function TreeView:set_target_size(axis, value)
+  if axis ~= "x" then return end
+  local max = core.root_view.size.x / 2
+  config.treeview_size = common.clamp(value, style.padding.x * 3, max)
 end
 
 
@@ -60,7 +68,42 @@ function TreeView:check_cache()
       v.skip = nil
     end
     self.last_project_files = core.project_files
+    self.metrics = nil
   end
+end
+
+
+function TreeView:get_item_width(item)
+  if not item.width then
+    local icon_width = style.icon_font:get_width("D")
+    local spacing = style.font:get_width(" ") * 2
+    item.width = item.depth * style.padding.x + style.padding.x * 2 + icon_width
+      + spacing + style.font:get_width(item.name) + style.padding.x
+  end
+  return item.width
+end
+
+
+function TreeView:get_metrics()
+  if not self.metrics then
+    local count, width = 0, 0
+    for item in self:each_item() do
+      count = count + 1
+      width = math.max(width, self:get_item_width(item))
+    end
+    self.metrics = { count = count, width = width }
+  end
+  return self.metrics
+end
+
+
+function TreeView:get_scrollable_size()
+  return self:get_metrics().count * self:get_item_height() + style.padding.y * 2
+end
+
+
+function TreeView:get_h_scrollable_size()
+  return self:get_metrics().width
 end
 
 
@@ -115,6 +158,7 @@ function TreeView:on_mouse_pressed(button, x, y)
     return
   elseif self.hovered_item.type == "dir" then
     self.hovered_item.expanded = not self.hovered_item.expanded
+    self.metrics = nil
   else
     core.try(function()
       core.root_view:open_doc(core.open_doc(self.hovered_item.filename))
@@ -179,6 +223,8 @@ function TreeView:draw()
     x = x + spacing
     x = common.draw_text(style.font, color, item.name, nil, x, y, 0, h)
   end
+
+  self:draw_scrollbar()
 end
 
 
