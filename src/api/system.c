@@ -63,6 +63,14 @@ top:
         lua_pushstring(L, "exposed");
         return 1;
       }
+#if SDL_VERSION_ATLEAST(2, 0, 18)
+      /* the window moved to another display, which may refresh at a
+      ** different rate */
+      if (e.window.event == SDL_WINDOWEVENT_DISPLAY_CHANGED) {
+        lua_pushstring(L, "displaychanged");
+        return 1;
+      }
+#endif
       /* on some systems, when alt-tabbing to the window SDL will queue up
       ** several KEYDOWN events for the `tab` key; we flush all keydown
       ** events on focus so these are discarded */
@@ -70,6 +78,13 @@ top:
         SDL_FlushEvent(SDL_KEYDOWN);
       }
       goto top;
+
+#if SDL_VERSION_ATLEAST(2, 0, 9)
+    /* a display was added, removed or changed mode */
+    case SDL_DISPLAYEVENT:
+      lua_pushstring(L, "displaychanged");
+      return 1;
+#endif
 
     case SDL_DROPFILE:
       SDL_GetGlobalMouseState(&mx, &my);
@@ -193,6 +208,18 @@ static int f_set_window_mode(lua_State *L) {
   if (n == WIN_NORMAL) { SDL_RestoreWindow(window); }
   if (n == WIN_MAXIMIZED) { SDL_MaximizeWindow(window); }
   return 0;
+}
+
+
+static int f_get_refresh_rate(lua_State *L) {
+  SDL_DisplayMode mode;
+  int display = SDL_GetWindowDisplayIndex(window);
+  if (display < 0 || SDL_GetCurrentDisplayMode(display, &mode) != 0
+      || mode.refresh_rate <= 0) {
+    return 0;
+  }
+  lua_pushnumber(L, mode.refresh_rate);
+  return 1;
 }
 
 
@@ -391,6 +418,7 @@ static const luaL_Reg lib[] = {
   { "set_window_title",    f_set_window_title    },
   { "set_window_mode",     f_set_window_mode     },
   { "window_has_focus",    f_window_has_focus    },
+  { "get_refresh_rate",    f_get_refresh_rate    },
   { "show_confirm_dialog", f_show_confirm_dialog },
   { "chdir",               f_chdir               },
   { "list_dir",            f_list_dir            },

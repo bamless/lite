@@ -1,7 +1,7 @@
 local config = {}
 
 config.project_scan_rate = 5
-config.fps = 60
+config.fps = system.get_refresh_rate() or 60
 config.blink_timeout = 10
 config.max_log_items = 80
 config.message_timeout = 3

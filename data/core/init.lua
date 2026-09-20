@@ -12,6 +12,14 @@ local Doc
 local core = {}
 local redraw_requested = true
 local next_wakeup = math.huge
+local detected_fps = config.fps
+
+local function update_refresh_rate()
+  local fps = system.get_refresh_rate()
+  if not fps or fps == config.fps or config.fps ~= detected_fps then return end
+  core.log_quiet("Display refresh rate is %d Hz", fps)
+  config.fps, detected_fps = fps, fps
+end
 
 local function project_scan_thread()
   local function diff_files(a, b)
@@ -123,7 +131,6 @@ function core.init()
   if got_plugin_error or got_user_error or got_project_error then
     command.perform("core:open-log")
   end
-  renderer.show_debug(true)
 end
 
 
@@ -399,6 +406,8 @@ function core.on_event(type, ...)
         core.root_view:open_doc(doc)
       end
     end
+  elseif type == "displaychanged" then
+    update_refresh_rate()
   elseif type == "quit" then
     core.quit()
   end
