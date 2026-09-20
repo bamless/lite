@@ -10,7 +10,8 @@ local CommandView
 local Doc
 
 local core = {}
-
+local redraw_requested = true
+local next_wakeup = math.huge
 
 local function project_scan_thread()
   local function diff_files(a, b)
@@ -65,7 +66,7 @@ local function project_scan_thread()
     local t = get_files(".")
     if diff_files(core.project_files, t) then
       core.project_files = t
-      core.redraw = true
+      core.request_redraw()
     end
 
     -- wait for next scan
@@ -101,7 +102,6 @@ function core.init()
   core.docs = {}
   core.threads = setmetatable({}, { __mode = "k" })
   core.project_files = {}
-  core.redraw = true
 
   core.root_view = RootView()
   core.command_view = CommandView()
@@ -123,6 +123,7 @@ function core.init()
   if got_plugin_error or got_user_error or got_project_error then
     command.perform("core:open-log")
   end
+  renderer.show_debug(true)
 end
 
 
@@ -229,6 +230,51 @@ function core.add_thread(f, weak_ref)
 end
 
 
+-- Besides `coroutine.yield()` (run again next pass) and
+-- `coroutine.yield(seconds)` (run again after a delay), a thread has two ways
+-- to wait for work without keeping an idle main loop awake:
+--
+-- * `coroutine.yield(core.WHEN_AWAKE)`: resumed on every pass the main loop
+--   makes anyway, but never a reason to make one. Suits a thread that polls
+--   for work which is always produced during a pass, like the highlighter
+--   (work comes from edits and drawing). Anything that changes state outside
+--   a pass must still wake the loop, with `core.request_redraw()`.
+--
+-- * `coroutine.yield(math.huge)`: parked. It isn't resumed at all until
+--   someone calls `core.wake_thread` with the key the thread was added under.
+--   Suits a thread whose work is announced explicitly.
+core.WHEN_AWAKE = {}
+
+
+-- Wakes a parked thread. Pass the key the thread was added under: a numeric
+-- key is not stable, as it shifts when earlier threads finish. Threads in a
+-- timed wait are left alone, so repeated wakes can't cut short a deliberate
+-- delay such as a debounce.
+function core.wake_thread(key)
+  local thread = core.threads[key]
+  if thread and thread.wake == math.huge then
+    thread.wake = 0
+  end
+end
+
+
+-- Views call this from `update()` to be updated again at `time` (as returned
+-- by `system.get_time()`) even if no event arrives, e.g. for the next caret
+-- blink. `core.step` clears the request, so views ask again on every update.
+-- Threads should `coroutine.yield(seconds)` instead.
+function core.request_wakeup(time)
+  next_wakeup = math.min(next_wakeup, time)
+end
+
+
+-- Asks for a frame to be drawn on the next pass of the main loop. Anything
+-- that changes what's on screen must call this, including threads: an idle
+-- main loop only wakes for events, wake-up requests and redraw requests.
+function core.request_redraw()
+  redraw_requested = true
+end
+
+
 function core.push_clip_rect(x, y, w, h)
   local x2, y2, w2, h2 = table.unpack(core.clip_rect_stack[#core.clip_rect_stack])
   local r, b, r2, b2 = x+w, y+h, x2+w2, y2+h2
@@ -281,6 +327,8 @@ local function log(icon, icon_color, fmt, ...)
   if icon then
     core.status_view:show_message(icon, icon_color, text)
   end
+
+  core.request_redraw()
 
   local info = debug.getinfo(2, "Sl")
   local at = string.format("%s:%d", info.short_src, info.currentline)
@@ -375,7 +423,7 @@ function core.step()
       local _, res = core.try(core.on_event, type, a, b, c, d)
       did_keymap = res or did_keymap
     end
-    core.redraw = true
+    core.request_redraw()
   end
   if mouse_moved then
     core.try(core.on_event, "mousemoved", mouse.x, mouse.y, mouse.dx, mouse.dy)
@@ -383,11 +431,12 @@ function core.step()
 
   local width, height = renderer.get_size()
 
-  -- update
+  -- update; views re-request their wake-ups here, so drop the previous ones
+  next_wakeup = math.huge
   core.root_view.size.x, core.root_view.size.y = width, height
   core.root_view:update()
-  if not core.redraw then return false end
-  core.redraw = false
+  if not redraw_requested then return false end
+  redraw_requested = false
 
   -- close unreferenced docs
   for i = #core.docs, 1, -1 do
@@ -425,12 +474,15 @@ local run_threads = coroutine.wrap(function()
       -- run thread
       if thread.wake < system.get_time() then
         local _, wait = assert(coroutine.resume(thread.cr))
+        thread.when_awake = (wait == core.WHEN_AWAKE)
         if coroutine.status(thread.cr) == "dead" then
           if type(k) == "number" then
             table.remove(core.threads, k)
           else
             core.threads[k] = nil
           end
+        elseif thread.when_awake then
+          thread.wake = 0
         elseif wait then
           thread.wake = system.get_time() + wait
         end
@@ -453,8 +505,29 @@ function core.run()
     core.frame_start = system.get_time()
     local did_redraw = core.step()
     run_threads()
-    if not did_redraw and not system.window_has_focus() then
-      system.wait_event(0.25)
+
+    -- When nothing changed, block until the next event or the earliest
+    -- deadline instead of running every frame. We must not wait if:
+    -- * this pass drew: `core.step` clears the redraw request before drawing,
+    --   and an animation (`View:move_towards`) only asks for its next frame
+    --   in the next update;
+    -- * a thread requested a redraw (e.g. the highlighter finished a batch).
+    -- A thread that yielded without a delay keeps a `wake` in the past, as do
+    -- threads skipped once `run_threads` ran out of time, so busy threads
+    -- still run every frame. `WHEN_AWAKE` threads don't count: they only run
+    -- when something else wakes the loop. `wait_event` also returns on events
+    -- that `poll_event` swallows, such as window focus changes.
+    if not did_redraw and not redraw_requested then
+      local deadline = next_wakeup
+      for _, thread in pairs(core.threads) do
+        if not thread.when_awake then
+          deadline = math.min(deadline, thread.wake)
+        end
+      end
+      local timeout = deadline - system.get_time()
+      if timeout > 0 then
+        system.wait_event(timeout)
+      end
     end
     local elapsed = system.get_time() - core.frame_start
     system.sleep(math.max(0, 1 / config.fps - elapsed))

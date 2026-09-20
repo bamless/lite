@@ -24,6 +24,7 @@ void ren_free_font(RenFont *font);
 void ren_set_font_tab_width(RenFont *font, int n);
 int ren_get_font_tab_width(RenFont *font);
 int ren_get_font_width(RenFont *font, const char *text);
+int ren_get_text_bounds(RenFont *font, const char *text, int x, int y, RenRect *bounds);
 int ren_get_font_height(RenFont *font);
 
 void ren_draw_rect(RenRect rect, RenColor color);

@@ -28,7 +28,7 @@ function View:move_towards(t, k, dest, rate)
     t[k] = common.lerp(val, dest, rate or 0.5)
   end
   if val ~= dest then
-    core.redraw = true
+    core.request_redraw()
   end
 end
 

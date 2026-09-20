@@ -16,12 +16,17 @@
 
 enum { FREE_FONT, SET_CLIP, DRAW_TEXT, DRAW_RECT };
 
+/* `rect` covers every pixel a command can touch: it decides which cells the
+** command is hashed into and whether it's replayed for a dirty region. For
+** DRAW_TEXT that's the text's ink bounds, which can differ from its pen
+** position (`text_x`, `text_y`) because glyphs overhang the line box. */
 typedef struct {
   int type, size;
   RenRect rect;
   RenColor color;
   RenFont *font;
   int tab_width;
+  int text_x, text_y;
 } Command;
 
 /** returns the pointer to the text portion of a `DRAW_TEXT` command.
@@ -73,18 +78,26 @@ static inline int cell_idx(int x, int y) {
 }
 
 
-static inline bool rects_overlap(RenRect a, RenRect b) {
-  return b.x + b.width  >= a.x && b.x <= a.x + a.width
-      && b.y + b.height >= a.y && b.y <= a.y + a.height;
-}
-
-
 static RenRect intersect_rects(RenRect a, RenRect b) {
   int x1 = max(a.x, b.x);
   int y1 = max(a.y, b.y);
   int x2 = min(a.x + a.width, b.x + b.width);
   int y2 = min(a.y + a.height, b.y + b.height);
   return (RenRect) { x1, y1, max(0, x2 - x1), max(0, y2 - y1) };
+}
+
+
+/* whether two rects overlap, rects that only touch on an edge count as overlapping */
+static inline bool rects_overlap(RenRect a, RenRect b) {
+  return b.x + b.width  >= a.x && b.x <= a.x + a.width
+      && b.y + b.height >= a.y && b.y <= a.y + a.height;
+}
+
+
+/* unlike `rects_overlap`, rects that only touch at an edge don't count */
+static inline bool rects_intersect(RenRect a, RenRect b) {
+  RenRect r = intersect_rects(a, b);
+  return r.width > 0 && r.height > 0;
 }
 
 
@@ -151,25 +164,24 @@ void rencache_draw_rect(RenRect rect, RenColor color) {
 
 
 int rencache_draw_text(RenFont *font, const char *text, int x, int y, RenColor color) {
-  RenRect rect;
-  rect.x = x;
-  rect.y = y;
-  rect.width = ren_get_font_width(font, text);
-  rect.height = ren_get_font_height(font);
+  RenRect bounds;
+  int width = ren_get_text_bounds(font, text, x, y, &bounds);
 
-  if (rects_overlap(screen_rect, rect)) {
+  if (rects_overlap(screen_rect, bounds)) {
     int sz = strlen(text) + 1;
     Command *cmd = push_command(DRAW_TEXT, sizeof(Command) + sz);
     if (cmd) {
       memcpy(command_text(cmd), text, sz);
       cmd->color = color;
       cmd->font = font;
-      cmd->rect = rect;
+      cmd->rect = bounds;
+      cmd->text_x = x;
+      cmd->text_y = y;
       cmd->tab_width = ren_get_font_tab_width(font);
     }
   }
 
-  return x + rect.width;
+  return x + width;
 }
 
 
@@ -262,8 +274,11 @@ void rencache_end_frame(void) {
   for (int i = 0; i < rect_count; i++) {
     /* draw */
     RenRect r = rect_buf[i];
-    ren_set_clip_rect(r);
 
+    RenRect clip = r;
+    ren_set_clip_rect(clip);
+
+    /* Skip draw commands entirely outside the current clip */
     cmd = NULL;
     while (next_command(&cmd)) {
       switch (cmd->type) {
@@ -271,14 +286,17 @@ void rencache_end_frame(void) {
           has_free_commands = true;
           break;
         case SET_CLIP:
-          ren_set_clip_rect(intersect_rects(cmd->rect, r));
+          clip = intersect_rects(cmd->rect, r);
+          ren_set_clip_rect(clip);
           break;
         case DRAW_RECT:
+          if (!rects_intersect(cmd->rect, clip)) { break; }
           ren_draw_rect(cmd->rect, cmd->color);
           break;
         case DRAW_TEXT:
+          if (!rects_intersect(cmd->rect, clip)) { break; }
           ren_set_font_tab_width(cmd->font, cmd->tab_width);
-          ren_draw_text(cmd->font, command_text(cmd), cmd->rect.x, cmd->rect.y, cmd->color);
+          ren_draw_text(cmd->font, command_text(cmd), cmd->text_x, cmd->text_y, cmd->color);
           break;
       }
     }

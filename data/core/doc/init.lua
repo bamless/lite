@@ -1,3 +1,4 @@
+local core = require "core"
 local Object = require "core.object"
 local Highlighter = require "core.doc.highlighter"
 local syntax = require "core.syntax"
@@ -284,6 +285,8 @@ function Doc:raw_insert(line, col, text, undo_stack, time)
   -- update highlighter and assure selection is in bounds
   self.highlighter:invalidate(line)
   self:sanitize_selection()
+
+  core.request_redraw()
 end
 
 
@@ -303,6 +306,8 @@ function Doc:raw_remove(line1, col1, line2, col2, undo_stack, time)
   -- update highlighter and assure selection is in bounds
   self.highlighter:invalidate(line1)
   self:sanitize_selection()
+
+  core.request_redraw()
 end
 
 

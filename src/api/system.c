@@ -4,6 +4,8 @@
 #include <dirent.h>
 #include <unistd.h>
 #include <errno.h>
+#include <limits.h>
+#include <math.h>
 #include <sys/stat.h>
 #include "api.h"
 #include "rencache.h"
@@ -134,7 +136,10 @@ top:
 
 static int f_wait_event(lua_State *L) {
   double n = luaL_checknumber(L, 1);
-  lua_pushboolean(L, SDL_WaitEventTimeout(NULL, n * 1000));
+  double ms = ceil(n * 1000);
+  if (!(ms > 0)) { ms = 0; }
+  if (ms > INT_MAX) { ms = INT_MAX; }
+  lua_pushboolean(L, SDL_WaitEventTimeout(NULL, (int) ms));
   return 1;
 }
 

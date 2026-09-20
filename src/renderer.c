@@ -242,6 +242,41 @@ int ren_get_font_width(RenFont *font, const char *text) {
 }
 
 
+/* Returns the advance width of `text`, like `ren_get_font_width`, and stores
+** in `bounds` a rect covering every pixel `ren_draw_text` can touch when
+** drawing it at (x, y). That's the line box (advance width by font height)
+** grown by glyph ink reaching outside it: typographic metrics don't bound
+** glyph bitmaps, and even the bundled fonts overhang by 1-2px (e.g. `j`, `(`,
+** accented capitals). Glyph positions are computed exactly as in
+** `ren_draw_text`, including its float to int conversion. */
+int ren_get_text_bounds(RenFont *font, const char *text, int x, int y, RenRect *bounds) {
+  int x1 = x, y1 = y, x2 = x, y2 = y + font->height;
+  int pen = x;
+  const char *p = text;
+  unsigned codepoint;
+  while (*p) {
+    p = utf8_to_codepoint(p, &codepoint);
+    GlyphSet *set = get_glyphset(font, codepoint);
+    stbtt_bakedchar *g = &set->glyphs[codepoint & 0xff];
+    int w = g->x1 - g->x0;
+    int h = g->y1 - g->y0;
+    /* invisible glyphs (tab, newline) draw nothing */
+    if (w > 0 && h > 0) {
+      int gx = pen + g->xoff;
+      int gy = y + g->yoff;
+      if (gx < x1) { x1 = gx; }
+      if (gy < y1) { y1 = gy; }
+      if (gx + w > x2) { x2 = gx + w; }
+      if (gy + h > y2) { y2 = gy + h; }
+    }
+    pen += g->xadvance;
+  }
+  if (pen > x2) x2 = pen;
+  *bounds = (RenRect) { x1, y1, x2 - x1, y2 - y1 };
+  return pen - x;
+}
+
+
 int ren_get_font_height(RenFont *font) {
   return font->height;
 }

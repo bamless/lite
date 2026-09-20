@@ -57,7 +57,9 @@ function DocView:new(doc)
   self.doc = assert(doc)
   self.font = "code_font"
   self.last_x_offset = {}
-  self.blink_timer = 0
+  self.blink_start = system.get_time()
+  self.caret_visible = false
+  self.was_focused = false
 end
 
 
@@ -229,7 +231,7 @@ function DocView:on_mouse_pressed(button, x, y, clicks)
     self.doc:set_selection(mouse_selection(self.doc, clicks, line, col, line, col))
     self.mouse_selecting = { line, col, clicks = clicks }
   end
-  self.blink_timer = 0
+  self.blink_start = system.get_time()
 end
 
 
@@ -263,24 +265,49 @@ end
 
 
 function DocView:update()
-  -- scroll to make caret visible and reset blink timer if it moved
+  local now = system.get_time()
+
+  -- scroll to make caret visible and restart blinking if it moved
   local line, col = self.doc:get_selection()
   if (line ~= self.last_line or col ~= self.last_col) and self.size.x > 0 then
     if core.active_view == self then
       self:scroll_to_make_visible(line, col)
     end
-    self.blink_timer = 0
+    self.blink_start = now
     self.last_line, self.last_col = line, col
   end
 
-  -- update blink timer
-  if self == core.active_view and not self.mouse_selecting then
-    local n = blink_period / 2
-    local prev = self.blink_timer
-    self.blink_timer = (self.blink_timer + 1 / config.fps) % blink_period
-    if (self.blink_timer > n) ~= (prev > n) then
-      core.redraw = true
-    end
+  -- keep the caret solid while drag-selecting
+  if self.mouse_selecting then
+    self.blink_start = now
+  end
+
+  -- The caret is only shown in the active view of a focused window. Focus
+  -- changes don't reach Lua as events, so compare against the last update;
+  -- gaining focus restarts blinking so the caret shows up straight away.
+  local focused = core.active_view == self and system.window_has_focus()
+  if focused ~= self.was_focused then
+    if focused then self.blink_start = now end
+    self.was_focused = focused
+  end
+
+  -- The blink phase is derived from the clock rather than counted per frame,
+  -- because the main loop only wakes up when asked to: we request a wake-up
+  -- at the next change between visible and hidden. After
+  -- `config.blink_timeout` seconds without input the caret stays solid and
+  -- stops requesting wake-ups, so an idle editor can sleep. That deadline is
+  -- requested too, in case the caret is hidden at that moment.
+  local visible = focused
+  local elapsed = now - self.blink_start
+  if focused and elapsed < config.blink_timeout then
+    local half = blink_period / 2
+    visible = elapsed % blink_period < half
+    local next_change = self.blink_start + (math.floor(elapsed / half) + 1) * half
+    core.request_wakeup(math.min(next_change, self.blink_start + config.blink_timeout))
+  end
+  if visible ~= self.caret_visible then
+    self.caret_visible = visible
+    core.request_redraw()
   end
 
   DocView.super.update(self)
@@ -327,10 +354,9 @@ function DocView:draw_line_body(idx, x, y)
   -- draw line's text
   self:draw_line_text(idx, x, y)
 
-  -- draw caret if it overlaps this line
-  if line == idx and core.active_view == self
-  and self.blink_timer < blink_period / 2
-  and system.window_has_focus() then
+  -- draw caret if it overlaps this line; `caret_visible` is computed in
+  -- `update()` and already accounts for the active view and window focus
+  if line == idx and self.caret_visible then
     local lh = self:get_line_height()
     local x1 = x + self:get_col_x_offset(line, col)
     renderer.draw_rect(x1, y, style.caret_width, lh, style.caret)

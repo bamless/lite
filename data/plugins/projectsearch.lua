@@ -30,11 +30,11 @@ local function find_all_matches_in_file(t, filename, fn)
     local s = fn(line)
     if s then
       table.insert(t, { file = filename, text = line, line = n, col = s })
-      core.redraw = true
+      core.request_redraw()
     end
     if n % 100 == 0 then coroutine.yield() end
     n = n + 1
-    core.redraw = true
+    core.request_redraw()
   end
   fp:close()
 end
@@ -57,7 +57,7 @@ function ResultsView:begin_search(text, fn)
     end
     self.searching = false
     self.brightness = 100
-    core.redraw = true
+    core.request_redraw()
   end, self.results)
 
   self.scroll.to.y = 0

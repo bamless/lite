@@ -47,6 +47,15 @@ core.add_thread(function()
     return c and c.last_change_id == doc:get_change_id()
   end
 
+  local function all_caches_valid()
+    for _, doc in ipairs(core.docs) do
+      if not cache_is_valid(doc) then
+        return false
+      end
+    end
+    return true
+  end
+
   while true do
     local symbols = {}
 
@@ -69,17 +78,17 @@ core.add_thread(function()
     -- update symbols list
     autocomplete.add { name = "open-docs", items = symbols }
 
-    -- wait for next scan
-    local valid = true
-    while valid do
-      coroutine.yield(1)
-      for _, doc in ipairs(core.docs) do
-        if not cache_is_valid(doc) then
-          valid = false
-        end
-      end
+    -- Wait for a doc to change or open. Docs only change while the main loop
+    -- is awake (from input, or from threads that request a redraw), so
+    -- checking on its passes is enough and doesn't keep an idle editor
+    -- awake. A change made while we were scanning skips the wait. 
+    while all_caches_valid() do
+      coroutine.yield(core.WHEN_AWAKE)
     end
 
+    -- Let edits settle for a second, so that typing triggers 
+    -- at most one rescan per second.
+    coroutine.yield(1)
   end
 end)
 

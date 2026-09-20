@@ -44,6 +44,7 @@ function StatusView:update()
 
   if system.get_time() < self.message_timeout then
     self.scroll.to.y = self.size.y
+    core.request_wakeup(self.message_timeout)
   else
     self.scroll.to.y = 0
   end
