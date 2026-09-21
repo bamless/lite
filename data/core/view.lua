@@ -85,15 +85,31 @@ function View:get_h_scrollbar_rect()
 end
 
 
+-- A scrollbar is only a few pixels thick, so the area that grabs it reaches
+-- out on the side the pointer approaches from. In a short or narrow view that
+-- reach would cover most of the content, so we clamp it at a quarter of the view
+local function grab_reach(thickness, size)
+  return math.min(thickness * 3, size / 4)
+end
+
+
 function View:scrollbar_overlaps_point(x, y)
   local sx, sy, sw, sh = self:get_scrollbar_rect()
-  return x >= sx - sw * 3 and x < sx + sw and y >= sy and y < sy + sh
+  return x >= sx - grab_reach(sw, self.size.x) and x < sx + sw
+     and y >= sy and y < sy + sh
 end
 
 
 function View:h_scrollbar_overlaps_point(x, y)
   local sx, sy, sw, sh = self:get_h_scrollbar_rect()
-  return y >= sy - sh * 3 and y < sy + sh and x >= sx and x < sx + sw
+  return y >= sy - grab_reach(sh, self.size.y) and y < sy + sh
+     and x >= sx and x < sx + sw
+end
+
+
+function View:pointer_on_scrollbar()
+  return self.hovered_scrollbar or self.hovered_h_scrollbar
+      or self.dragging_scrollbar or self.dragging_h_scrollbar
 end
 
 

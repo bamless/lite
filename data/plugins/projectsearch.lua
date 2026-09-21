@@ -72,6 +72,11 @@ end
 function ResultsView:on_mouse_moved(mx, my, ...)
   ResultsView.super.on_mouse_moved(self, mx, my, ...)
   self.selected_idx = 0
+
+  if self:pointer_on_scrollbar() then
+    return
+  end
+
   for i, item, x,y,w,h in self:each_visible_result() do
     if mx >= x and my >= y and mx < x + w and my < y + h then
       self.selected_idx = i

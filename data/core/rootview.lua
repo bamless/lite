@@ -5,6 +5,7 @@ local keymap = require "core.keymap"
 local Object = require "core.object"
 local View = require "core.view"
 local DocView = require "core.docview"
+local TabBar = require "core.tabbar"
 
 
 local EmptyView = View:extend()
@@ -49,8 +50,21 @@ function Node:new(type)
   self.views = {}
   self.divider = 0.5
   if self.type == "leaf" then
+    self.tab_bar = TabBar(self)
+    self.always_draw_tabs = true
     self:add_view(EmptyView())
   end
+end
+
+
+function Node:should_show_tabs()
+  if self.type ~= "leaf" or self.locked then
+    return false
+  end
+  if #self.views > 1 then
+    return true
+  end
+  return self.always_draw_tabs and not self.active_view:is(EmptyView)
 end
 
 
@@ -61,8 +75,10 @@ end
 
 
 function Node:on_mouse_moved(x, y, ...)
-  self.hovered_tab = self:get_tab_overlapping_point(x, y)
   if self.type == "leaf" then
+    if self:should_show_tabs() then
+      self.tab_bar:on_mouse_moved(x, y, ...)
+    end
     self.active_view:on_mouse_moved(x, y, ...)
   else
     self:propagate("on_mouse_moved", x, y, ...)
@@ -72,6 +88,9 @@ end
 
 function Node:on_mouse_released(...)
   if self.type == "leaf" then
+    if self:should_show_tabs() then
+      self.tab_bar:on_mouse_released(...)
+    end
     self.active_view:on_mouse_released(...)
   else
     self:propagate("on_mouse_released", ...)
@@ -82,6 +101,9 @@ end
 function Node:consume(node)
   for k, _ in pairs(self) do self[k] = nil end
   for k, v in pairs(node) do self[k] = v   end
+  if self.tab_bar then
+    self.tab_bar.node = self
+  end
 end
 
 
@@ -231,11 +253,10 @@ end
 
 
 function Node:get_tab_overlapping_point(px, py)
-  if #self.views == 1 then return nil end
-  local x, y, w, h = self:get_tab_rect(1)
-  if px >= x and py >= y and px < x + w * #self.views and py < y + h then
-    return math.floor((px - x) / w) + 1
+  if not self:should_show_tabs()
+    then return nil
   end
+  return self.tab_bar:get_tab_overlapping_point(px, py)
 end
 
 
@@ -249,13 +270,6 @@ function Node:get_child_overlapping_point(x, y)
     child = (y < self.b.position.y) and self.a or self.b
   end
   return child:get_child_overlapping_point(x, y)
-end
-
-
-function Node:get_tab_rect(idx)
-  local tw = math.min(style.tab_width, math.ceil(self.size.x / #self.views))
-  local h = style.font:get_height() + style.padding.y * 2
-  return self.position.x + (idx-1) * tw, self.position.y, tw, h
 end
 
 
@@ -319,8 +333,11 @@ end
 function Node:update_layout()
   if self.type == "leaf" then
     local av = self.active_view
-    if #self.views > 1 then
-      local _, _, _, th = self:get_tab_rect(1)
+    if self:should_show_tabs() then
+      local tb = self.tab_bar
+      local th = tb:get_height()
+      tb.position.x, tb.position.y = self.position.x, self.position.y
+      tb.size.x, tb.size.y = self.size.x, th
       av.position.x, av.position.y = self.position.x, self.position.y + th
       av.size.x, av.size.y = self.size.x, self.size.y - th
     else
@@ -342,6 +359,9 @@ end
 
 function Node:update()
   if self.type == "leaf" then
+    if self:should_show_tabs() then
+      self.tab_bar:update()
+    end
     for _, view in ipairs(self.views) do
       view:update()
     end
@@ -352,41 +372,10 @@ function Node:update()
 end
 
 
-function Node:draw_tabs()
-  local x, y, _, h = self:get_tab_rect(1)
-  local ds = style.divider_size
-  core.push_clip_rect(x, y, self.size.x, h)
-  renderer.draw_rect(x, y, self.size.x, h, style.background2)
-  renderer.draw_rect(x, y + h - ds, self.size.x, ds, style.divider)
-
-  for i, view in ipairs(self.views) do
-    local x, y, w, h = self:get_tab_rect(i)
-    local text = view:get_name()
-    local color = style.dim
-    if view == self.active_view then
-      color = style.text
-      renderer.draw_rect(x, y, w, h, style.background)
-      renderer.draw_rect(x + w, y, ds, h, style.divider)
-      renderer.draw_rect(x - ds, y, ds, h, style.divider)
-    end
-    if i == self.hovered_tab then
-      color = style.text
-    end
-    core.push_clip_rect(x, y, w, h)
-    x, w = x + style.padding.x, w - style.padding.x * 2
-    local align = style.font:get_width(text) > w and "left" or "center"
-    common.draw_text(style.font, color, text, align, x, y, w, h)
-    core.pop_clip_rect()
-  end
-
-  core.pop_clip_rect()
-end
-
-
 function Node:draw()
   if self.type == "leaf" then
-    if #self.views > 1 then
-      self:draw_tabs()
+    if self:should_show_tabs() then
+      self.tab_bar:draw()
     end
     local pos, size = self.active_view.position, self.active_view.size
     core.push_clip_rect(pos.x, pos.y, size.x + pos.x % 1, size.y + pos.y % 1)
@@ -452,12 +441,8 @@ function RootView:on_mouse_pressed(button, x, y, clicks)
     return
   end
   local node = self.root_node:get_child_overlapping_point(x, y)
-  local idx = node:get_tab_overlapping_point(x, y)
-  if idx then
-    node:set_active_view(node.views[idx])
-    if button == "middle" then
-      node:close_active_view(self.root_node)
-    end
+  if node:should_show_tabs() and node.tab_bar:overlaps_point(x, y) then
+    node.tab_bar:on_mouse_pressed(button, x, y, clicks)
   else
     core.set_active_view(node.active_view)
     node.active_view:on_mouse_pressed(button, x, y, clicks)
@@ -497,7 +482,7 @@ function RootView:on_mouse_moved(x, y, dx, dy)
   local div = self.root_node:get_divider_overlapping_point(x, y)
   if div and div:is_resizable() then
     system.set_cursor(div.type == "hsplit" and "sizeh" or "sizev")
-  elseif node:get_tab_overlapping_point(x, y) then
+  elseif node:should_show_tabs() and node.tab_bar:overlaps_point(x, y) then
     system.set_cursor("arrow")
   else
     system.set_cursor(node.active_view.cursor)
@@ -508,7 +493,11 @@ end
 function RootView:on_mouse_wheel(...)
   local x, y = self.mouse.x, self.mouse.y
   local node = self.root_node:get_child_overlapping_point(x, y)
-  node.active_view:on_mouse_wheel(...)
+  if node:should_show_tabs() and node.tab_bar:overlaps_point(x, y) then
+    node.tab_bar:on_mouse_wheel(...)
+  else
+    node.active_view:on_mouse_wheel(...)
+  end
 end
 
 

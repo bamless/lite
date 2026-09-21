@@ -142,8 +142,10 @@ function TreeView:each_item()
 end
 
 
-function TreeView:on_mouse_moved(px, py)
+function TreeView:on_mouse_moved(px, py, ...)
+  TreeView.super.on_mouse_moved(self, px, py, ...)
   self.hovered_item = nil
+  if self:pointer_on_scrollbar() then return end
   for item, x,y,w,h in self:each_item() do
     if px > x and py > y and px <= x + w and py <= y + h then
       self.hovered_item = item
@@ -153,7 +155,11 @@ function TreeView:on_mouse_moved(px, py)
 end
 
 
-function TreeView:on_mouse_pressed(button, x, y)
+function TreeView:on_mouse_pressed(button, x, y, clicks)
+  if TreeView.super.on_mouse_pressed(self, button, x, y, clicks) then
+    return true -- a scrollbar drag
+  end
+
   if not self.hovered_item then
     return
   elseif self.hovered_item.type == "dir" then
