@@ -1,6 +1,6 @@
 #!/bin/bash
-./build.sh release windows
-./build.sh release
+./build.sh release windows portable
+./build.sh release portable
 rm lite.zip 2>/dev/null
 cp winlib/SDL2-2.0.10/x86_64-w64-mingw32/bin/SDL2.dll SDL2.dll
 strip lite
