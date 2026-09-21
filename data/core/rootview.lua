@@ -171,6 +171,14 @@ function Node:get_node_for_view(view)
 end
 
 
+function Node:get_unlocked_leaf()
+  if self.type == "leaf" then
+    return not self.locked and self or nil
+  end
+  return self.a:get_unlocked_leaf() or self.b:get_unlocked_leaf()
+end
+
+
 function Node:get_parent_node(root)
   if root.a == self or root.b == self then
     return root
@@ -419,7 +427,10 @@ function RootView:open_doc(doc)
     core.set_active_view(core.last_active_view)
     node = self:get_active_node()
   end
-  assert(not node.locked, "Cannot open doc on locked node")
+  if node.locked then
+    node = assert(self.root_node:get_unlocked_leaf(), "Cannot find a node to open the doc on")
+    core.set_active_view(node.active_view)
+  end
   for i, view in ipairs(node.views) do
     if view.doc == doc then
       node:set_active_view(node.views[i])
