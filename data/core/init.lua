@@ -13,6 +13,7 @@ local core = {}
 local redraw_requested = true
 local next_wakeup = math.huge
 local detected_fps = config.fps
+local scale_override = tonumber(os.getenv("LITE_SCALE"))
 
 local function update_refresh_rate()
   local fps = system.get_refresh_rate()
@@ -20,6 +21,26 @@ local function update_refresh_rate()
   core.log_quiet("Display refresh rate is %d Hz", fps)
   config.fps, detected_fps = fps, fps
 end
+
+local function update_scale()
+  local scale = scale_override or system.get_display_scale()
+  if not scale or scale == style.scale then return end
+
+  local old = style.scale
+  style.set_scale(scale)
+  -- the first call runs before there is anything to tell or to log
+  if not old then return end
+
+  for _, view in ipairs(core.root_view.root_node:get_children()) do
+    view:on_scale_change(scale, old)
+  end
+
+  core.log_quiet("Display scale is now %g", scale)
+  core.request_redraw()
+end
+
+update_scale()
+
 
 local function project_scan_thread()
   local function diff_files(a, b)
@@ -444,12 +465,15 @@ function core.step()
     core.try(core.on_event, "mousemoved", mouse.x, mouse.y, mouse.dx, mouse.dy)
   end
 
+  -- update
   local width, height = renderer.get_size()
+  update_scale()
 
-  -- update; views re-request their wake-ups here, so drop the previous ones
+  -- views re-request their wake-ups here, so drop the previous ones
   next_wakeup = math.huge
   core.root_view.size.x, core.root_view.size.y = width, height
   core.root_view:update()
+
   if not redraw_requested then return false end
   redraw_requested = false
 

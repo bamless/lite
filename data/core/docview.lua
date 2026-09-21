@@ -117,6 +117,11 @@ function DocView:get_h_scrollable_size()
 end
 
 
+function DocView:on_scale_change()
+  self.h_size_cache = nil
+end
+
+
 function DocView:get_font()
   return style[self.font]
 end

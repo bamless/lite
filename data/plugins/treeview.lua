@@ -6,7 +6,7 @@ local keymap = require "core.keymap"
 local style = require "core.style"
 local View = require "core.view"
 
-config.treeview_size = 200 * SCALE
+config.treeview_size = 200
 
 local function get_depth(filename)
   local n = 0
@@ -32,7 +32,18 @@ end
 function TreeView:set_target_size(axis, value)
   if axis ~= "x" then return end
   local max = core.root_view.size.x / 2
-  config.treeview_size = common.clamp(value, style.padding.x * 3, max)
+  -- the drag is in real pixels, the setting is not
+  config.treeview_size = common.clamp(value, style.padding.x * 3, max) / style.scale
+  -- Take the width immediately instead of animating towards it on mouse resize
+  self.size.x = config.treeview_size * style.scale
+end
+
+
+function TreeView:on_scale_change()
+  for _, item in pairs(self.cache) do
+    item.width = nil
+  end
+  self.metrics = nil
 end
 
 
@@ -175,7 +186,7 @@ end
 
 function TreeView:update()
   -- update width
-  local dest = self.visible and config.treeview_size or 0
+  local dest = self.visible and config.treeview_size * style.scale or 0
   if self.init_size then
     self.size.x = dest
     self.init_size = false

@@ -18,63 +18,6 @@
 SDL_Window *window;
 
 
-static bool scale_from_env(const char *name, double *scale) {
-  const char *str = getenv(name);
-  if (!str) { return false; }
-  char *end;
-  double n = strtod(str, &end);
-  if (end == str || n <= 0) { return false; }
-  *scale = n;
-  return true;
-}
-
-
-/* The factor lite multiplies font sizes and paddings by. No platform offers
-** one portable answer, so ask the sources each one actually has, most
-** authoritative first. `LITE_SCALE` overrides all of this. */
-static double get_scale(void) {
-  float dpi = 0;
-  bool have_dpi = SDL_GetDisplayDPI(0, NULL, &dpi, NULL) == 0 && dpi > 0;
-
-#if _WIN32
-  return have_dpi ? dpi / 96.0 : 1.0;
-
-#elif __APPLE__
-  /* macOS scales the window itself, so the surface is in points rather than
-  ** pixels; scaling here as well would apply it twice */
-  return 1.0;
-
-#else
-  const char *driver = SDL_GetCurrentVideoDriver();
-
-  /* on Wayland this is the compositor's content scale: the setting the user
-  ** picked, which is exactly what we want */
-  if (driver && strcmp(driver, "wayland") == 0 && have_dpi) {
-    return dpi / 96.0;
-  }
-
-  /* what the session tells toolkit apps: GDK_SCALE is an integer factor and
-  ** GDK_DPI_SCALE an extra text multiplier on top of it */
-  double scale, dpi_scale;
-  if (scale_from_env("GDK_SCALE", &scale)) {
-    if (scale_from_env("GDK_DPI_SCALE", &dpi_scale)) { scale *= dpi_scale; }
-    return scale;
-  }
-  if (scale_from_env("QT_SCALE_FACTOR", &scale)) { return scale; }
-
-  /* Last resort on X11, where SDL reports the panel's physical DPI rather
-  ** than a user setting. A dense laptop screen with no desktop scaling would
-  ** report about 1.6 and make everything too large, so only take clearly
-  ** HiDPI values, snapped to quarter steps. */
-  if (have_dpi && dpi / 96.0 >= 1.5) {
-    return (int) (dpi / 96.0 * 4 + 0.5) / 4.0;
-  }
-
-  return 1.0;
-#endif
-}
-
-
 static void get_exe_filename(char *buf, int sz) {
 #if _WIN32
   int len = GetModuleFileName(NULL, buf, sz - 1);
@@ -157,9 +100,6 @@ int main(int argc, char **argv) {
   lua_pushstring(L, SDL_GetPlatform());
   lua_setglobal(L, "PLATFORM");
 
-  lua_pushnumber(L, get_scale());
-  lua_setglobal(L, "SCALE");
-
   char exename[2048];
   get_exe_filename(exename, sizeof(exename));
   lua_pushstring(L, exename);
@@ -169,7 +109,6 @@ int main(int argc, char **argv) {
   (void) luaL_dostring(L,
     "local core\n"
     "xpcall(function()\n"
-    "  SCALE = tonumber(os.getenv(\"LITE_SCALE\")) or SCALE\n"
     "  PATHSEP = package.config:sub(1, 1)\n"
     "  EXEDIR = EXEFILE:match(\"^(.+)[/\\\\].*$\")\n"
     "  package.path = EXEDIR .. '/data/?.lua;' .. package.path\n"

@@ -45,15 +45,13 @@ static inline char* command_text(Command* cmd) {
 }
 
 /* returns the index of the next command inside `command_buf`, properly aligned for storing
-** a `Command` struct.
-** the stride is kept separate from a command's `size` to avoid hashing the extra
-** padding bytes between one command and the next. */
+** a `Command` struct. ** the stride is kept separate from a command's `size` to avoid hashing the
+* extra ** padding bytes between one command and the next. */
 static inline int command_stride(int size) {
-  assert(size >= 0);
+  assert(size > 0);
   const unsigned align = alignof(Command);
   return (size + align - 1) & ~(align - 1);
 }
-
 
 
 static unsigned cells_buf1[CELLS_X * CELLS_Y];

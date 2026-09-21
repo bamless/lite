@@ -1,9 +1,9 @@
 #ifndef API_H
 #define API_H
 
-#include "lua.h"
-#include "lauxlib.h"
-#include "lualib.h"
+#include "lauxlib.h"  // IWYU pragma: export
+#include "lua.h"      // IWYU pragma: export
+#include "lualib.h"   // IWYU pragma: export
 
 #define API_TYPE_FONT "Font"
 

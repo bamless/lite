@@ -26,6 +26,12 @@ function View:set_target_size(axis, value)
 end
 
 
+-- called after `core.style` is rebuilt at a new scale; views drop whatever
+-- they measured with the old fonts
+function View:on_scale_change(new_scale, old_scale)
+end
+
+
 function View:move_towards(t, k, dest, rate)
   if type(t) ~= "table" then
     return self:move_towards(self, t, k, dest, rate)
@@ -151,8 +157,8 @@ end
 
 function View:on_mouse_wheel(y, x)
   if self.scrollable then
-    self.scroll.to.y = self.scroll.to.y - y * config.mouse_wheel_scroll
-    self.scroll.to.x = self.scroll.to.x + (x or 0) * config.mouse_wheel_scroll
+    self.scroll.to.y = self.scroll.to.y - y * config.mouse_wheel_scroll * style.scale
+    self.scroll.to.x = self.scroll.to.x + (x or 0) * config.mouse_wheel_scroll * style.scale
   end
 end
 

@@ -6,6 +6,8 @@
 #include <errno.h>
 #include <limits.h>
 #include <math.h>
+#include <stdlib.h>
+#include <string.h>
 #include <sys/stat.h>
 #include "api.h"
 #include "rencache.h"
@@ -43,7 +45,7 @@ static int f_poll_event(lua_State *L) {
   SDL_Event e;
 
 top:
-  if ( !SDL_PollEvent(&e) ) {
+  if (!SDL_PollEvent(&e)) {
     return 0;
   }
 
@@ -361,6 +363,72 @@ static int f_set_clipboard(lua_State *L) {
 }
 
 
+static bool scale_from_env(const char *name, double *scale) {
+  const char *str = getenv(name);
+  if (!str) return false;
+  char *end;
+  double n = strtod(str, &end);
+  if (end == str || n <= 0) { return false; }
+  *scale = n;
+  return true;
+}
+
+
+/* The factor lite multiplies font sizes and paddings by. No platform offers
+** one portable answer, so ask the sources each one actually has, most
+** authoritative first. `LITE_SCALE` overrides all of this. */
+static double get_display_scale(void) {
+  int display = SDL_GetWindowDisplayIndex(window);
+  if (display < 0) { display = 0; }
+
+  float dpi = 0;
+  bool have_dpi = SDL_GetDisplayDPI(display, NULL, &dpi, NULL) == 0 && dpi > 0;
+
+#if _WIN32
+  return have_dpi ? dpi / 96.0 : 1.0;
+
+#elif __APPLE__
+  /* macOS scales the window itself, so the surface is in points rather than
+  ** pixels; scaling here as well would apply it twice */
+  return 1.0;
+
+#else
+  const char *driver = SDL_GetCurrentVideoDriver();
+
+  /* on Wayland this is the compositor's content scale: the setting the user
+  ** picked, which is exactly what we want */
+  if (driver && strcmp(driver, "wayland") == 0 && have_dpi) {
+    return dpi / 96.0;
+  }
+
+  /* what the session tells toolkit apps: GDK_SCALE is an integer factor and
+  ** GDK_DPI_SCALE an extra text multiplier on top of it */
+  double scale, dpi_scale;
+  if (scale_from_env("GDK_SCALE", &scale)) {
+    if (scale_from_env("GDK_DPI_SCALE", &dpi_scale)) { scale *= dpi_scale; }
+    return scale;
+  }
+  if (scale_from_env("QT_SCALE_FACTOR", &scale)) { return scale; }
+
+  /* Last resort on X11, where SDL reports the panel's physical DPI rather
+  ** than a user setting. A dense laptop screen with no desktop scaling would
+  ** report about 1.6 and make everything too large, so only take clearly
+  ** HiDPI values, snapped to quarter steps. */
+  if (have_dpi && dpi / 96.0 >= 1.5) {
+    return (int) (dpi / 96.0 * 4 + 0.5) / 4.0;
+  }
+
+  return 1.0;
+#endif
+}
+
+
+static int f_get_display_scale(lua_State *L) {
+  lua_pushnumber(L, get_display_scale());
+  return 1;
+}
+
+
 static int f_get_time(lua_State *L) {
   double n = SDL_GetPerformanceCounter() / (double) SDL_GetPerformanceFrequency();
   lua_pushnumber(L, n);
@@ -434,6 +502,7 @@ static const luaL_Reg lib[] = {
   { "get_file_info",       f_get_file_info       },
   { "get_clipboard",       f_get_clipboard       },
   { "set_clipboard",       f_set_clipboard       },
+  { "get_display_scale",   f_get_display_scale   },
   { "get_time",            f_get_time            },
   { "sleep",               f_sleep               },
   { "exec",                f_exec                },

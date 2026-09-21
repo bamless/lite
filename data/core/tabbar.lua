@@ -105,7 +105,7 @@ end
 
 function TabBar:on_mouse_wheel(y, x)
   local delta = (x ~= 0) and x or -y
-  self.scroll.to.x = self.scroll.to.x + delta * config.mouse_wheel_scroll
+  self.scroll.to.x = self.scroll.to.x + delta * config.mouse_wheel_scroll * style.scale
 end
 
 

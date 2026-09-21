@@ -1,17 +1,30 @@
 local common = require "core.common"
 local style = {}
 
-style.padding = { x = common.round(14 * SCALE), y = common.round(7 * SCALE) }
-style.divider_size = common.round(1 * SCALE)
-style.scrollbar_size = common.round(4 * SCALE)
-style.caret_width = common.round(2 * SCALE)
-style.tab_width = common.round(170 * SCALE)
+-- path and unscaled size per font, so a user module can replace one and keep
+-- it across a scale change
+style.fonts = {
+  font      = { EXEDIR .. "/data/fonts/font.ttf",      14 },
+  big_font  = { EXEDIR .. "/data/fonts/font.ttf",      34 },
+  icon_font = { EXEDIR .. "/data/fonts/icons.ttf",     14 },
+  code_font = { EXEDIR .. "/data/fonts/monospace.ttf", 13.5 },
+}
 
-style.font = renderer.font.load(EXEDIR .. "/data/fonts/font.ttf", 14 * SCALE)
-style.big_font = renderer.font.load(EXEDIR .. "/data/fonts/font.ttf", 34 * SCALE)
-style.icon_font = renderer.font.load(EXEDIR .. "/data/fonts/icons.ttf", 14 * SCALE)
-style.code_font = renderer.font.load(EXEDIR .. "/data/fonts/monospace.ttf", 13.5 * SCALE)
+-- multiples of the ui font's height
+style.em = {
+  padding_x = 0.85,
+  padding_y = 0.42,
+  tab_width = 10.3,
+}
 
+-- unscaled pixels: hairlines and pointer targets
+style.px = {
+  divider_size = 1,
+  scrollbar_size = 4,
+  caret_width = 2,
+}
+
+-- UI & syntax color
 style.background = { common.color "#2e2e32" }
 style.background2 = { common.color "#252529" }
 style.background3 = { common.color "#252529" }
@@ -38,5 +51,24 @@ style.syntax["literal"] = { common.color "#FFA94D" }
 style.syntax["string"] = { common.color "#f7c95c" }
 style.syntax["operator"] = { common.color "#93DDFA" }
 style.syntax["function"] = { common.color "#93DDFA" }
+
+function style.set_scale(scale)
+  style.scale = scale
+
+  for name, font in pairs(style.fonts) do
+    style[name] = renderer.font.load(font[1], font[2] * scale)
+  end
+
+  local em = style.font:get_height()
+  style.padding = {
+    x = common.round(em * style.em.padding_x),
+    y = common.round(em * style.em.padding_y)
+  }
+  style.tab_width = common.round(em * style.em.tab_width)
+
+  style.divider_size = common.round(style.px.divider_size * scale)
+  style.scrollbar_size = common.round(style.px.scrollbar_size * scale)
+  style.caret_width = common.round(style.px.caret_width * scale)
+end
 
 return style
