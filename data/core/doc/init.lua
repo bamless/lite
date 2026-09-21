@@ -49,6 +49,7 @@ function Doc:reset()
   self.lines = { "\n" }
   self.selection = { a = { line=1, col=1 }, b = { line=1, col=1 } }
   self.undo_stack = { idx = 1 }
+  self.mark_active = false
   self.redo_stack = { idx = 1 }
   self.clean_change_id = 1
   self.highlighter = Highlighter(self)
@@ -151,6 +152,15 @@ end
 function Doc:has_selection()
   local a, b = self.selection.a, self.selection.b
   return not (a.line == b.line and a.col == b.col)
+end
+
+
+function Doc:toggle_mark(active)
+  self.mark_active = active
+  if active then
+    local line, col = self:get_selection()
+    self:set_selection(line, col)
+  end
 end
 
 
@@ -285,6 +295,7 @@ function Doc:raw_insert(line, col, text, undo_stack, time)
   -- update highlighter and assure selection is in bounds
   self.highlighter:invalidate(line)
   self:sanitize_selection()
+  self.mark_active = false
 
   core.request_redraw()
 end
@@ -306,6 +317,7 @@ function Doc:raw_remove(line1, col1, line2, col2, undo_stack, time)
   -- update highlighter and assure selection is in bounds
   self.highlighter:invalidate(line1)
   self:sanitize_selection()
+  self.mark_active = false
 
   core.request_redraw()
 end

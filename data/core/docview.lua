@@ -240,6 +240,7 @@ function DocView:on_mouse_pressed(button, x, y, clicks)
   if caught then
     return
   end
+  self.doc:toggle_mark(false)
   if keymap.modkeys["shift"] then
     if clicks == 1 then
       local line1, col1 = select(3, self.doc:get_selection())

@@ -3,6 +3,7 @@ strict.defined = {}
 
 
 -- used to define a global variable
+---@diagnostic disable-next-line: lowercase-global
 function global(t)
   for k, v in pairs(t) do
     strict.defined[k] = true

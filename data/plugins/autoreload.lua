@@ -12,7 +12,12 @@ end
 
 
 local function reload_doc(doc)
-  local fp = io.open(doc.filename, "r")
+  local fp, err = io.open(doc.filename, "r")
+  if not fp then
+    core.error("Could not reload doc '" .. doc.filename .. "': " .. err)
+    return
+  end
+
   local text = fp:read("*a")
   fp:close()
 

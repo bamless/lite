@@ -84,10 +84,10 @@ end
 
 
 keymap.add {
-  ["ctrl+shift+p"] = "core:find-command",
-  ["ctrl+p"] = "core:find-file",
+  ["ctrl+shift+p"] = "core:find-file",
+  ["ctrl+alt+p"] = "core:find-command",
   ["ctrl+o"] = "core:open-file",
-  ["ctrl+n"] = "core:new-doc",
+  ["ctrl+alt+n"] = "core:new-doc",
   ["alt+return"] = "core:toggle-fullscreen",
 
   ["alt+shift+j"] = "root:split-left",
@@ -99,7 +99,7 @@ keymap.add {
   ["alt+i"] = "root:switch-to-up",
   ["alt+k"] = "root:switch-to-down",
 
-  ["ctrl+w"] = "root:close",
+  ["ctrl+x"] = "root:close",
   ["ctrl+tab"] = "root:switch-to-next-tab",
   ["ctrl+shift+tab"] = "root:switch-to-previous-tab",
   ["ctrl+pageup"] = "root:move-tab-left",
@@ -114,7 +114,7 @@ keymap.add {
   ["alt+8"] = "root:switch-to-tab-8",
   ["alt+9"] = "root:switch-to-tab-9",
 
-  ["ctrl+f"] = "find-replace:find",
+  ["ctrl+shift+f"] = "find-replace:find",
   ["ctrl+r"] = "find-replace:replace",
   ["f3"] = "find-replace:repeat-find",
   ["shift+f3"] = "find-replace:previous-find",
@@ -124,7 +124,7 @@ keymap.add {
 
   ["ctrl+z"] = "doc:undo",
   ["ctrl+y"] = "doc:redo",
-  ["ctrl+x"] = "doc:cut",
+  ["ctrl+shift+x"] = "doc:cut",
   ["ctrl+c"] = "doc:copy",
   ["ctrl+v"] = "doc:paste",
   ["escape"] = { "command:escape", "doc:select-none" },
@@ -143,7 +143,7 @@ keymap.add {
   ["ctrl+return"] = "doc:newline-below",
   ["ctrl+shift+return"] = "doc:newline-above",
   ["ctrl+j"] = "doc:join-lines",
-  ["ctrl+a"] = "doc:select-all",
+  ["ctrl+shift+a"] = "doc:select-all",
   ["ctrl+d"] = { "find-replace:select-next", "doc:select-word" },
   ["ctrl+l"] = "doc:select-lines",
   ["ctrl+/"] = "doc:toggle-line-comments",
@@ -181,6 +181,24 @@ keymap.add {
   ["ctrl+shift+end"] = "doc:select-to-end-of-doc",
   ["shift+pageup"] = "doc:select-to-previous-page",
   ["shift+pagedown"] = "doc:select-to-next-page",
+}
+
+
+keymap.add {
+  ["ctrl+f"] = "doc:move-to-next-char",
+  ["ctrl+b"] = "doc:move-to-previous-char",
+  ["ctrl+p"] = { "command:select-previous", "doc:move-to-previous-line" },
+  ["ctrl+n"] = { "command:select-next", "doc:move-to-next-line" },
+  ["ctrl+a"] = "doc:move-to-start-of-line",
+  ["ctrl+e"] = "doc:move-to-end-of-line",
+  ["ctrl+space"] = "doc:toggle-mark",
+
+  ["alt+f"] = "doc:move-to-next-word-end",
+  ["alt+b"] = "doc:move-to-previous-word-start",
+  -- the readline convention, and the counterpart to alt+d
+  ["ctrl+w"] = "doc:delete-to-previous-word-start",
+  ["alt+d"] = "doc:delete-to-next-word-end",
+  ["ctrl+k"] = "doc:delete-to-end-of-line",
 }
 
 return keymap

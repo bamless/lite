@@ -21,14 +21,16 @@ instance of lite.
 
 The main way of opening files in lite is through the `core:find-file` command
 — this provides a fuzzy finder over all of the project's files and can be
-opened using the **`ctrl+p`** shortcut by default.
+opened using the **`ctrl+shift+p`** shortcut by default. `ctrl+p` and `ctrl+n`
+move between lines, command palette suggestions and search results, following
+emacs.
 
 Commands can be run using keyboard shortcuts, or by using the `core:find-command`
-command bound to **`ctrl+shift+p`** by default. For example, pressing
-`ctrl+shift+p` and typing `newdoc` then pressing `return` would open a new
+command bound to **`ctrl+alt+p`** by default. For example, pressing
+`ctrl+alt+p` and typing `newdoc` then pressing `return` would open a new
 document. The current keyboard shortcut for a command can be seen to the right
 of the command name on the command finder, thus to find the shortcut for a command
-`ctrl+shift+p` can be pressed and the command name typed.
+`ctrl+alt+p` can be pressed and the command name typed.
 
 
 ## User Module
@@ -59,7 +61,7 @@ command is run it will be created.
 
 
 ## Commands
-Commands in lite are used both through the command finder (`ctrl+shift+p`) and
+Commands in lite are used both through the command finder (`ctrl+alt+p`) and
 by lite's keyboard shortcut system. Commands consist of 3 components:
 * **Name** — The command name in the form of `namespace:action-name`, for
   example: `doc:select-all`

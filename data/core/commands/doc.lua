@@ -16,6 +16,16 @@ local function doc()
 end
 
 
+-- With the mark set, moving extends the selection instead of collapsing it.
+local function move_or_select(fn, ...)
+  if doc().mark_active then
+    doc():select_to(fn, ...)
+  else
+    doc():move_to(fn, ...)
+  end
+end
+
+
 local function get_indent_string()
   if config.tab_type == "hard" then
     return "\t"
@@ -141,6 +151,11 @@ local commands = {
   ["doc:select-none"] = function()
     local line, col = doc():get_selection()
     doc():set_selection(line, col)
+    doc():toggle_mark(false)
+  end,
+
+  ["doc:toggle-mark"] = function()
+    doc():toggle_mark(not doc().mark_active)
   end,
 
   ["doc:select-lines"] = function()
@@ -151,7 +166,7 @@ local commands = {
 
   ["doc:select-word"] = function()
     local line1, col1 = doc():get_selection(true)
-    local line1, col1 = translate.start_of_word(doc(), line1, col1)
+    line1, col1 = translate.start_of_word(doc(), line1, col1)
     local line2, col2 = translate.end_of_word(doc(), line1, col1)
     doc():set_selection(line2, col2, line1, col1)
   end,
@@ -339,26 +354,26 @@ local translations = {
 }
 
 for name, fn in pairs(translations) do
-  commands["doc:move-to-" .. name] = function() doc():move_to(fn, dv()) end
+  commands["doc:move-to-" .. name] = function() move_or_select(fn, dv()) end
   commands["doc:select-to-" .. name] = function() doc():select_to(fn, dv()) end
   commands["doc:delete-to-" .. name] = function() doc():delete_to(fn, dv()) end
 end
 
 commands["doc:move-to-previous-char"] = function()
-  if doc():has_selection() then
+  if doc():has_selection() and not doc().mark_active then
     local line, col = doc():get_selection(true)
     doc():set_selection(line, col)
   else
-    doc():move_to(translate.previous_char)
+    move_or_select(translate.previous_char)
   end
 end
 
 commands["doc:move-to-next-char"] = function()
-  if doc():has_selection() then
+  if doc():has_selection() and not doc().mark_active then
     local _, _, line, col = doc():get_selection(true)
     doc():set_selection(line, col)
   else
-    doc():move_to(translate.next_char)
+    move_or_select(translate.next_char)
   end
 end
 

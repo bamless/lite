@@ -194,7 +194,7 @@ function CommandView:update()
   end
 
   -- update size based on whether this is the active_view
-  local dest = 0
+  dest = 0
   if self == core.active_view then
     dest = style.font:get_height() + style.padding.y * 2
   end

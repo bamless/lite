@@ -1,0 +1,36 @@
+{
+  "$schema": "https://raw.githubusercontent.com/LuaLS/vscode-lua/master/setting/schema.json",
+  "runtime": {
+    "version": "LuaJIT",
+    "path": [
+      "?.lua",
+      "?/init.lua",
+      "data/?.lua",
+      "data/?/init.lua"
+    ]
+  },
+  "workspace": {
+    "ignoreDir": [
+      "lib",
+      "doc"
+    ],
+    "checkThirdParty": false
+  },
+  "diagnostics": {
+    "globals": [
+      "ARGS",
+      "EXEDIR",
+      "EXEFILE",
+      "PATHSEP",
+      "PLATFORM",
+      "SCALE",
+      "VERSION",
+      "renderer",
+      "system"
+    ],
+    "disable": [
+      "duplicate-set-field",
+      "redundant-parameter"
+    ]
+  }
+}

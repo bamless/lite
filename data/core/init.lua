@@ -552,7 +552,8 @@ end
 
 function core.on_error(err)
   -- write error to file
-  local fp = io.open(EXEDIR .. "/error.txt", "wb")
+  local fp, ferr = io.open(EXEDIR .. "/error.txt", "wb")
+  assert(fp, "Could not open error log file: " .. ferr)
   fp:write("Error: " .. tostring(err) .. "\n")
   fp:write(debug.traceback(nil, 4))
   fp:close()
