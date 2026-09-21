@@ -2,6 +2,7 @@
 #include <stdalign.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include "rencache.h"
 
 /* a cache over the software renderer -- all drawing operations are stored as
@@ -9,9 +10,16 @@
 ** of hash values, take the cells that have changed since the previous frame,
 ** merge them into dirty rectangles and redraw only those regions */
 
-#define CELLS_X 80
-#define CELLS_Y 50
-#define CELL_SIZE 96
+#ifndef MAX_SCREEN_WIDTH
+#define MAX_SCREEN_WIDTH  7680
+#endif
+#ifndef MAX_SCREEN_HEIGHT
+#define MAX_SCREEN_HEIGHT 4320
+#endif
+
+#define CELL_SIZE 48
+#define CELLS_X ((MAX_SCREEN_WIDTH  + CELL_SIZE - 1) / CELL_SIZE + 1)
+#define CELLS_Y ((MAX_SCREEN_HEIGHT + CELL_SIZE - 1) / CELL_SIZE + 1)
 #define COMMAND_BUF_SIZE (1024 * 1024 * 5) /* 5Mib */
 
 enum { FREE_FONT, SET_CLIP, DRAW_TEXT, DRAW_RECT };
@@ -195,6 +203,12 @@ void rencache_begin_frame(void) {
   int w, h;
   ren_get_size(&w, &h);
   if (screen_rect.width != w || h != screen_rect.height) {
+    if (w > MAX_SCREEN_WIDTH || h > MAX_SCREEN_HEIGHT) {
+      fprintf(stderr, "lite: window is %dx%d, larger than the %dx%d the "
+        "renderer cache covers. Raise MAX_SCREEN_WIDTH/MAX_SCREEN_HEIGHT.\n",
+        w, h, MAX_SCREEN_WIDTH, MAX_SCREEN_HEIGHT);
+      exit(EXIT_FAILURE);
+    }
     screen_rect.width = w;
     screen_rect.height = h;
     rencache_invalidate();
