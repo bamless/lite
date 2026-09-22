@@ -21,6 +21,7 @@ style.em = {
 style.px = {
   divider_size = 1,
   scrollbar_size = 4,
+  scrollbar_hover_size = 10,
   caret_width = 2,
 }
 
@@ -68,6 +69,7 @@ function style.set_scale(scale)
 
   style.divider_size = common.round(style.px.divider_size * scale)
   style.scrollbar_size = common.round(style.px.scrollbar_size * scale)
+  style.scrollbar_hover_size = common.round(style.px.scrollbar_hover_size * scale)
   style.caret_width = common.round(style.px.caret_width * scale)
 end
 
