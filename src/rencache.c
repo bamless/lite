@@ -1,8 +1,10 @@
 #include <assert.h>
 #include <stdalign.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include "renderer.h"
 #include "rencache.h"
 
 /* a cache over the software renderer -- all drawing operations are stored as
@@ -24,29 +26,29 @@
 
 enum { FREE_FONT, SET_CLIP, DRAW_TEXT, DRAW_RECT };
 
-/* `rect` covers every pixel a command can touch: it decides which cells the
-** command is hashed into and whether it's replayed for a dirty region. For
-** DRAW_TEXT that's the text's ink bounds, which can differ from its pen
-** position (`text_x`, `text_y`) because glyphs overhang the line box. */
+
 typedef struct {
-  int type, size;
   RenRect rect;
-  RenColor color;
   RenFont *font;
+  int type, size;
+  RenColor color;
   int tab_width;
   int text_x, text_y;
 } Command;
 
-/** returns the pointer to the text portion of a `DRAW_TEXT` command.
- ** the text bytes are always stored after the command's last field, including its padding bytes */
+
+/* returns the pointer to the text portion of a `DRAW_TEXT` command.
+** the text bytes are always stored after the command's last field,
+** including its padding bytes */
 static inline char* command_text(Command* cmd) {
   assert(cmd->type == DRAW_TEXT && "Command is not a `DRAW_TEXT` command");
   return (char*)cmd + sizeof(Command);
 }
 
-/* returns the index of the next command inside `command_buf`, properly aligned for storing
-** a `Command` struct. ** the stride is kept separate from a command's `size` to avoid hashing the
-* extra ** padding bytes between one command and the next. */
+/* returns the index of the next command inside `command_buf`, properly
+** aligned for storing a `Command` struct. the stride is kept separate
+** from a command's `size` to avoid hashing the extra padding bytes between
+** one command and the next. */
 static inline int command_stride(int size) {
   assert(size > 0);
   const unsigned align = alignof(Command);
@@ -214,7 +216,33 @@ void rencache_begin_frame(void) {
 }
 
 
-static void update_overlapping_cells(RenRect r, unsigned h) {
+static void push_rect(RenRect r, int *count) {
+  /* try to merge with existing rectangle */
+  for (int i = *count - 1; i >= 0; i--) {
+    RenRect *rp = &rect_buf[i];
+    if (rects_overlap(*rp, r)) {
+      *rp = merge_rects(*rp, r);
+      return;
+    }
+  }
+  /* couldn't merge with previous rectangle: push */
+  rect_buf[(*count)++] = r;
+}
+
+
+static unsigned hash_command_for_cells(const Command *cmd) {
+  static_assert(offsetof(Command, rect) == 0,
+                "`rect` must be the first member of `Command` for correct cell hashing");
+  unsigned h = HASH_INITIAL;
+  /* Hash everything about a command except its bounds: its rect is folded in per
+  ** cell by `update_overlapping_cells`, so that a command which grows or shrinks
+  ** leaves the cells it already covered unchanged. */
+  hash(&h, (char*)cmd + sizeof(RenRect), cmd->size - sizeof(RenRect));
+  return h;
+}
+
+
+static void update_overlapping_cells(RenRect r, unsigned cmd_hash) {
   int x1 = r.x / CELL_SIZE;
   int y1 = r.y / CELL_SIZE;
   int x2 = (r.x + r.width  - 1) / CELL_SIZE;
@@ -223,42 +251,40 @@ static void update_overlapping_cells(RenRect r, unsigned h) {
   for (int y = y1; y <= y2; y++) {
     for (int x = x1; x <= x2; x++) {
       int idx = cell_idx(x, y);
-      hash(&cells[idx], &h, sizeof(h));
+      RenRect cell = { x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE };
+      RenRect part = intersect_rects(r, cell);
+      unsigned cell_hash = cmd_hash;
+      /* mix in the command's bounds falling into this cell.
+      ** this makes us skip re-drawing the cell if the command's
+      ** bounds change, but does not affect this specific cell.
+      ** this is also the reason `rect` is skipped from
+      ** `hash_command_for_cell` above. */
+      hash(&cell_hash, &part, sizeof(part));
+      hash(&cells[idx], &cell_hash, sizeof(cell_hash));
     }
   }
-}
-
-
-static void push_rect(RenRect r, int *count) {
-  /* Absorb every rect `r` touches. Each merge grows `r`, which can then reach
-  ** rects it didn't touch before, so rescan until nothing overlaps. */
-  bool merged;
-  do {
-    merged = false;
-    for (int i = *count - 1; i >= 0; i--) {
-      if (rects_overlap(rect_buf[i], r)) {
-        r = merge_rects(rect_buf[i], r);
-        rect_buf[i] = rect_buf[--(*count)]; /* swap-delete since the rect's order doesn't matter */
-        merged = true;
-      }
-    }
-  } while (merged);
-
-  rect_buf[(*count)++] = r;
 }
 
 
 void rencache_end_frame(void) {
   /* update cells from commands */
   Command *cmd = NULL;
-  RenRect cr = screen_rect;
+  RenRect clip = screen_rect;
+  bool has_free_commands = false;
   while (next_command(&cmd)) {
-    if (cmd->type == SET_CLIP) { cr = cmd->rect; }
-    RenRect r = intersect_rects(cmd->rect, cr);
-    if (r.width == 0 || r.height == 0) { continue; }
-    unsigned h = HASH_INITIAL;
-    hash(&h, cmd, cmd->size);
-    update_overlapping_cells(r, h);
+    if (cmd->type == SET_CLIP) {
+      clip = cmd->rect;
+      /* no point in hashing clip commands; they don't draw, only affect bounds */
+      continue;
+    }
+    if (cmd->type == FREE_FONT) {
+      has_free_commands = true;
+      /* also no point in hashing font free commands */
+      continue;
+    }
+    RenRect r = intersect_rects(cmd->rect, clip);
+    if (r.width == 0 || r.height == 0) continue;
+    update_overlapping_cells(r, hash_command_for_cells(cmd));
   }
 
   /* push rects for all cells changed from last frame, reset cells */
@@ -287,7 +313,6 @@ void rencache_end_frame(void) {
   }
 
   /* redraw updated regions */
-  bool has_free_commands = false;
   for (int i = 0; i < rect_count; i++) {
     /* draw */
     RenRect r = rect_buf[i];
@@ -300,7 +325,7 @@ void rencache_end_frame(void) {
     while (next_command(&cmd)) {
       switch (cmd->type) {
         case FREE_FONT:
-          has_free_commands = true;
+          /* no-op */
           break;
         case SET_CLIP:
           clip = intersect_rects(cmd->rect, r);

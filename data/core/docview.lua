@@ -397,7 +397,6 @@ function DocView:draw_line_gutter(idx, x, y)
   renderer.draw_text(self:get_font(), idx, x, y + yoffset, color)
 end
 
-
 function DocView:draw()
   self:draw_background(style.background)
 
