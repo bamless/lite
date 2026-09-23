@@ -1,4 +1,5 @@
 #include <SDL2/SDL.h>
+#include <SDL2/SDL_video.h>
 #include <stdbool.h>
 #include <ctype.h>
 #include <dirent.h>
@@ -10,7 +11,6 @@
 #include <string.h>
 #include <sys/stat.h>
 #include "api.h"
-#include "rencache.h"
 #ifdef _WIN32
   #include <windows.h>
 #endif
@@ -61,7 +61,7 @@ top:
         lua_pushnumber(L, e.window.data2);
         return 3;
       } else if (e.window.event == SDL_WINDOWEVENT_EXPOSED) {
-        rencache_invalidate();
+        SDL_UpdateWindowSurface(window);
         lua_pushstring(L, "exposed");
         return 1;
       }
