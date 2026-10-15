@@ -11,6 +11,7 @@ config.ignore_files = "^%."
 config.symbol_pattern = "[%a_][%w_]*"
 config.non_word_chars = " \t\n/\\()\"':,.;<>~!@#$%^&*|+=[]{}`?-"
 config.undo_merge_timeout = 0.3
+config.tooltip_fade_time = 0.15
 config.max_undos = 10000
 config.highlight_current_line = true
 config.line_height = 1.2

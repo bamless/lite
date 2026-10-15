@@ -106,6 +106,7 @@ end
 function TabBar:on_mouse_wheel(y, x)
   local delta = (x ~= 0) and x or -y
   self.scroll.to.x = self.scroll.to.x + delta * config.mouse_wheel_scroll * style.scale
+  self.tooltip_tab = nil
 end
 
 
@@ -147,6 +148,8 @@ function TabBar:draw()
   self:draw_background(style.background2)
 
   core.push_clip_rect(self.position.x, self.position.y, self.size.x, self.size.y)
+
+  local hovered_overflows = false
   for i, view in ipairs(self.node.views) do
     local x, y, w, h = self:get_tab_rect(i)
     -- tabs scrolled off either edge, skip it
@@ -168,23 +171,82 @@ function TabBar:draw()
       local tx = x + style.padding.x
       local tw = cx - tx
       local text = view:get_name()
-      local align = style.font:get_width(text) > tw and "left" or "center"
+
+      local align = "center"
+      local tab_overflows = style.font:get_width(text) > tw
+      if tab_overflows then
+        local chars = {}
+        for char in common.utf8_chars(text) do
+          table.insert(chars, char)
+        end
+        repeat
+          table.remove(chars, 1)
+          text = "…" .. table.concat(chars)
+        until #chars == 0 or style.font:get_width(text) <= tw
+        align = "left"
+      end
       common.draw_text(style.font, color, text, align, tx, y, tw, h)
 
       local close_color = style.dim
       if i == self.hovered_tab then
         close_color = self.hovered_close and style.accent or style.text
+        hovered_overflows = tab_overflows
       end
       common.draw_text(style.icon_font, close_color, "x", "center",
         cx, cy, cw, ch)
       core.pop_clip_rect()
     end
   end
+
   core.pop_clip_rect()
 
   renderer.draw_rect(self.position.x, self.position.y + self.size.y - ds,
     self.size.x, ds, style.divider)
   self:draw_scrollbar()
+
+  local tooltip_tab = not self.hovered_close and hovered_overflows and self.hovered_tab or nil
+  if tooltip_tab ~= self.tooltip_tab then
+    self.tooltip_tab = tooltip_tab
+    self.tooltip_shown_at = system.get_time()
+  end
+
+  if tooltip_tab then
+    core.root_view:defer_draw(self.draw_tooltip, self, tooltip_tab)
+  end
+end
+
+
+function TabBar:draw_tooltip(idx)
+  local view = self.node.views[idx]
+  if not view then return end
+
+  local fade = (system.get_time() - self.tooltip_shown_at) / config.tooltip_fade_time
+  local alpha = common.clamp(fade, 0, 1)
+  if alpha < 1 then
+    core.request_redraw()
+  end
+
+  local function faded(color)
+    return { color[1], color[2], color[3], (color[4] or 255) * alpha }
+  end
+
+  local text = view.doc and view.doc.filename or view:get_name()
+
+  local font = style.font
+  local pad_x, pad_y = style.padding.x / 2, style.padding.y / 2
+  local w = font:get_width(text) + pad_x * 2
+  local h = font:get_height() + pad_y * 2
+
+  local tab_x = self:get_tab_rect(idx)
+  local root = core.root_view
+  local x = math.min(tab_x, root.position.x + root.size.x - w)
+  x = math.max(x, root.position.x)
+  local y = self.position.y + self.size.y
+
+  local ds = style.divider_size
+  renderer.draw_rect(x - ds, y - ds, w + ds * 2, h + ds * 2, faded(style.divider))
+  renderer.draw_rect(x, y, w, h, faded(style.background3))
+  common.draw_text(font, faded(style.text), text, "left", x + pad_x, y, w, h)
 end
 
 

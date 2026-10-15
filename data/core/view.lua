@@ -92,7 +92,7 @@ end
 
 function View:scrollbar_overlaps_point(x, y)
   local sx, sy, sw, sh = self:get_scrollbar_rect()
-  local grab_reach = style.scrollbar_hover_size
+  local grab_reach = style.scrollbar_hover_size / 2
   return x >= sx - grab_reach and x < sx + sw
      and y >= sy and y < sy + sh
 end
@@ -100,7 +100,7 @@ end
 
 function View:h_scrollbar_overlaps_point(x, y)
   local sx, sy, sw, sh = self:get_h_scrollbar_rect()
-  local grab_reach = style.scrollbar_hover_size
+  local grab_reach = style.scrollbar_hover_size / 2
   return y >= sy - grab_reach and y < sy + sh
      and x >= sx and x < sx + sw
 end
