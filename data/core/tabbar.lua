@@ -100,6 +100,15 @@ function TabBar:update()
     self.last_active_view = self.node.active_view
     self:scroll_to_tab(self.node:get_view_idx(self.node.active_view))
   end
+
+  if self.tooltip_tab then
+    local now = system.get_time()
+    if now < self.tooltip_shown_at then
+      core.request_wakeup(self.tooltip_shown_at)
+    elseif now < self.tooltip_shown_at + config.tooltip_fade_time then
+      core.request_redraw()
+    end
+  end
 end
 
 
@@ -148,8 +157,6 @@ function TabBar:draw()
   self:draw_background(style.background2)
 
   core.push_clip_rect(self.position.x, self.position.y, self.size.x, self.size.y)
-
-  local hovered_overflows = false
   for i, view in ipairs(self.node.views) do
     local x, y, w, h = self:get_tab_rect(i)
     -- tabs scrolled off either edge, skip it
@@ -173,8 +180,7 @@ function TabBar:draw()
       local text = view:get_name()
 
       local align = "center"
-      local tab_overflows = style.font:get_width(text) > tw
-      if tab_overflows then
+      if style.font:get_width(text) > tw then
         local chars = {}
         for char in common.utf8_chars(text) do
           table.insert(chars, char)
@@ -190,27 +196,25 @@ function TabBar:draw()
       local close_color = style.dim
       if i == self.hovered_tab then
         close_color = self.hovered_close and style.accent or style.text
-        hovered_overflows = tab_overflows
       end
       common.draw_text(style.icon_font, close_color, "x", "center",
         cx, cy, cw, ch)
       core.pop_clip_rect()
     end
   end
-
   core.pop_clip_rect()
 
   renderer.draw_rect(self.position.x, self.position.y + self.size.y - ds,
     self.size.x, ds, style.divider)
   self:draw_scrollbar()
 
-  local tooltip_tab = not self.hovered_close and hovered_overflows and self.hovered_tab or nil
+  local tooltip_tab = not self.hovered_close and self.hovered_tab or nil
   if tooltip_tab ~= self.tooltip_tab then
     self.tooltip_tab = tooltip_tab
-    self.tooltip_shown_at = system.get_time()
+    self.tooltip_shown_at = system.get_time() + config.tooltip_delay
   end
 
-  if tooltip_tab then
+  if tooltip_tab and system.get_time() >= self.tooltip_shown_at then
     core.root_view:defer_draw(self.draw_tooltip, self, tooltip_tab)
   end
 end
@@ -222,9 +226,6 @@ function TabBar:draw_tooltip(idx)
 
   local fade = (system.get_time() - self.tooltip_shown_at) / config.tooltip_fade_time
   local alpha = common.clamp(fade, 0, 1)
-  if alpha < 1 then
-    core.request_redraw()
-  end
 
   local function faded(color)
     return { color[1], color[2], color[3], (color[4] or 255) * alpha }
