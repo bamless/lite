@@ -122,8 +122,21 @@ function TabBar:scroll_to_tab(idx)
 end
 
 
+function TabBar:update_hover(x, y)
+  if self:pointer_on_scrollbar() then
+    self.hovered_tab, self.hovered_close = nil, nil
+    return
+  end
+  self.hovered_tab = self:get_tab_overlapping_point(x, y)
+  self.hovered_close = self.hovered_tab
+    and self:close_overlaps_point(self.hovered_tab, x, y)
+end
+
+
 function TabBar:update()
   TabBar.super.update(self)
+  local mouse = core.root_view.mouse
+  self:update_hover(mouse.x, mouse.y)
   -- following the active view has to happen here rather than in
   -- `Node:set_active_view`, because opening a document also changes it
   if self.node.active_view ~= self.last_active_view then
@@ -146,18 +159,6 @@ function TabBar:on_mouse_wheel(y, x)
   local delta = (x ~= 0) and x or -y
   self.scroll.to.x = self.scroll.to.x + delta * config.mouse_wheel_scroll * style.scale
   self.tooltip_tab = nil
-end
-
-
-function TabBar:on_mouse_moved(x, y, dx, dy)
-  TabBar.super.on_mouse_moved(self, x, y, dx, dy)
-  if self:pointer_on_scrollbar() then
-    self.hovered_tab, self.hovered_close = nil, nil
-    return
-  end
-  self.hovered_tab = self:get_tab_overlapping_point(x, y)
-  self.hovered_close = self.hovered_tab
-    and self:close_overlaps_point(self.hovered_tab, x, y)
 end
 
 
