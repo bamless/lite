@@ -25,8 +25,26 @@ function TabBar:get_height()
 end
 
 
-function TabBar:get_tab_width()
-  return style.tab_width
+-- the close button sits at the right end of the tab; this is its rect for a
+-- tab occupying the given rect
+local function close_rect(x, y, w, h)
+  local s = style.icon_font:get_height()
+  local pad = style.padding.x / 2
+  return x + w - s - pad * 2, y + (h - s) / 2 - pad / 2, s + pad, s + pad
+end
+
+
+-- a tab is as wide as its name plus the close button, but never wider than
+-- `style.tab_width`; longer names get truncated when drawn. The name lives
+-- between the left padding and the close button (see `TabBar:draw`), so the
+-- fitting width is those parts added up, plus a half padding gap before the
+-- button so the name doesn't touch it.
+function TabBar:get_tab_width(idx)
+  local s = style.icon_font:get_height()
+  local pad = style.padding.x / 2
+  local name_w = style.font:get_width(self.node.views[idx]:get_name())
+  local w = style.padding.x + name_w + pad + s + pad * 2
+  return math.min(math.ceil(w), style.tab_width)
 end
 
 
@@ -36,24 +54,33 @@ end
 
 
 function TabBar:get_h_scrollable_size()
-  return #self.node.views * self:get_tab_width()
+  local total = 0
+  for i = 1, #self.node.views do
+    total = total + self:get_tab_width(i)
+  end
+  return total
+end
+
+
+function TabBar:get_tab_offset(idx)
+  local offset = 0
+  for i = 1, idx - 1 do
+    offset = offset + self:get_tab_width(i)
+  end
+  return offset
 end
 
 
 function TabBar:get_tab_rect(idx)
-  local w = self:get_tab_width()
-  return self.position.x - self.scroll.x + (idx - 1) * w,
+  return self.position.x - self.scroll.x + self:get_tab_offset(idx),
          self.position.y,
-         w,
+         self:get_tab_width(idx),
          self.size.y
 end
 
 
 function TabBar:get_close_rect(idx)
-  local x, y, w, h = self:get_tab_rect(idx)
-  local s = style.icon_font:get_height()
-  local pad = style.padding.x / 2
-  return x + w - s - pad * 2, y + (h - s) / 2 - pad / 2, s + pad, s + pad
+  return close_rect(self:get_tab_rect(idx))
 end
 
 
@@ -70,10 +97,13 @@ end
 
 function TabBar:get_tab_overlapping_point(px, py)
   if not self:overlaps_point(px, py) then return nil end
-  local w = self:get_tab_width()
-  local idx = math.floor((px - self.position.x + self.scroll.x) / w) + 1
-  if idx >= 1 and idx <= #self.node.views then
-    return idx
+  local x = self.position.x - self.scroll.x
+  for i = 1, #self.node.views do
+    local w = self:get_tab_width(i)
+    if px >= x and px < x + w then
+      return i
+    end
+    x = x + w
   end
 end
 
@@ -85,8 +115,8 @@ end
 
 function TabBar:scroll_to_tab(idx)
   if not idx then return end
-  local w = self:get_tab_width()
-  local left = (idx - 1) * w
+  local w = self:get_tab_width(idx)
+  local left = self:get_tab_offset(idx)
   self.scroll.to.x = math.min(self.scroll.to.x, left)
   self.scroll.to.x = math.max(self.scroll.to.x, left + w - self.size.x)
 end
@@ -157,8 +187,11 @@ function TabBar:draw()
   self:draw_background(style.background2)
 
   core.push_clip_rect(self.position.x, self.position.y, self.size.x, self.size.y)
+  -- walk the tabs left to right, so each one's position is the previous one's
+  -- end rather than a fresh sum over all the tabs before it
+  local x, y, h = self.position.x - self.scroll.x, self.position.y, self.size.y
   for i, view in ipairs(self.node.views) do
-    local x, y, w, h = self:get_tab_rect(i)
+    local w = self:get_tab_width(i)
     -- tabs scrolled off either edge, skip it
     if x + w > self.position.x and x < self.position.x + self.size.x then
       local color = style.dim
@@ -172,7 +205,7 @@ function TabBar:draw()
         color = style.text
       end
 
-      local cx, cy, cw, ch = self:get_close_rect(i)
+      local cx, cy, cw, ch = close_rect(x, y, w, h)
       core.push_clip_rect(x, y, w, h)
       -- the name stops where the close button starts
       local tx = x + style.padding.x
@@ -201,6 +234,7 @@ function TabBar:draw()
         cx, cy, cw, ch)
       core.pop_clip_rect()
     end
+    x = x + w
   end
   core.pop_clip_rect()
 

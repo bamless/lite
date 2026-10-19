@@ -14,7 +14,7 @@ style.fonts = {
 style.em = {
   padding_x = 0.85,
   padding_y = 0.42,
-  tab_width = 10.3,
+  tab_width = 15.0,
 }
 
 -- unscaled pixels: hairlines and pointer targets
@@ -61,10 +61,12 @@ function style.set_scale(scale)
   end
 
   local em = style.font:get_height()
+
   style.padding = {
     x = common.round(em * style.em.padding_x),
     y = common.round(em * style.em.padding_y)
   }
+
   style.tab_width = common.round(em * style.em.tab_width)
 
   style.divider_size = common.round(style.px.divider_size * scale)
