@@ -2,14 +2,50 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <SDL2/SDL.h>
+#include <string.h>
 #include "api/api.h"
 #include "renderer.h"
 
-#ifdef _WIN32
+#if defined(__linux__) || defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__) || \
+    defined(__NetBSD__)
+  #define OS_POSIX 1
+#endif
+
+#if _WIN32
   #include <windows.h>
-#elif __linux__
+#elif OS_POSIX
   #include <unistd.h>
-#elif __APPLE__
+  #include <fcntl.h>
+
+  #define POSIX_CHECK(expr) do { \
+      if ((expr) == -1) {        \
+          perror(#expr);         \
+          _exit(1);              \
+      }                          \
+  } while (0)
+
+static void detatch_process() {
+  pid_t pid = fork();
+  POSIX_CHECK(pid);
+
+  if (pid > 0) _exit(0);
+
+  POSIX_CHECK(setsid());
+
+  int fd = open("/dev/null", O_RDWR);
+  POSIX_CHECK(fd);
+
+  POSIX_CHECK(dup2(fd, STDIN_FILENO));
+  POSIX_CHECK(dup2(fd, STDOUT_FILENO));
+  POSIX_CHECK(dup2(fd, STDERR_FILENO));
+
+  if (fd > STDERR_FILENO) {
+    close(fd);
+  }
+}
+#endif
+
+#ifdef __APPLE__
   #include <mach-o/dyld.h>
 #endif
 
@@ -57,6 +93,12 @@ int main(int argc, char **argv) {
   HINSTANCE lib = LoadLibrary("user32.dll");
   int (*SetProcessDPIAware)() = (void*) GetProcAddress(lib, "SetProcessDPIAware");
   SetProcessDPIAware();
+#endif
+
+#if OS_POSIX
+  if(argc <= 1 || strcmp(argv[1], "--foreground") != 0) {
+    detatch_process();
+  }
 #endif
 
   SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS);
