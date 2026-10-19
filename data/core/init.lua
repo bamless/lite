@@ -145,6 +145,8 @@ function core.init()
   local got_user_error = not core.try(require, "user")
   local got_project_error = not core.load_project_module()
 
+  style.set_scale(style.scale)
+
   for _, filename in ipairs(files) do
     core.root_view:open_doc(core.open_doc(filename))
   end

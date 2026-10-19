@@ -1,8 +1,15 @@
 local common = require "core.common"
 local style = {}
 
--- path and unscaled size per font, so a user module can replace one and keep
--- it across a scale change
+-- -----------------------------------------------------------------------------
+-- Settings
+-- -----------------------------------------------------------------------------
+
+-- Everything in this section is meant to be changed, by a color theme, a
+-- plugin or the user module. Sizes are given in units that don't depend on the
+-- display (font points, ems, unscaled pixels).
+
+-- path and unscaled size per font
 style.fonts = {
   font      = { EXEDIR .. "/data/fonts/font.ttf",      14 },
   big_font  = { EXEDIR .. "/data/fonts/font.ttf",      34 },
@@ -53,26 +60,71 @@ style.syntax["string"] = { common.color "#f7c95c" }
 style.syntax["operator"] = { common.color "#93DDFA" }
 style.syntax["function"] = { common.color "#93DDFA" }
 
+-- -----------------------------------------------------------------------------
+-- Private derived values
+-- -----------------------------------------------------------------------------
+
+local derived = {}
+
+local derived_from = {
+  scale = "the display scale (or the LITE_SCALE environment variable)",
+  font = "style.fonts.font",
+  big_font = "style.fonts.big_font",
+  icon_font = "style.fonts.icon_font",
+  code_font = "style.fonts.code_font",
+  padding = "style.em.padding_x and style.em.padding_y",
+  tab_width = "style.em.tab_width",
+  divider_size = "style.px.divider_size",
+  scrollbar_size = "style.px.scrollbar_size",
+  scrollbar_hover_size = "style.px.scrollbar_hover_size",
+  caret_width = "style.px.caret_width",
+}
+
+local function derived_write_error(name, setting)
+  error(string.format("style.%s is computed by style.set_scale; set %s instead",
+    name, setting), 3)
+end
+
+setmetatable(style, {
+  __index = derived,
+  __newindex = function(t, k, v)
+    local setting = derived_from[k] or (style.fonts[k] and "style.fonts." .. k)
+    if setting then
+      derived_write_error(k, setting)
+    end
+    rawset(t, k, v)
+  end,
+})
+
+local function read_only_padding(padding)
+  return setmetatable({}, {
+    __index = padding,
+    __newindex = function(_, k)
+      derived_write_error("padding." .. tostring(k), "style.em.padding_" .. tostring(k))
+    end,
+  })
+end
+
 function style.set_scale(scale)
-  style.scale = scale
+  derived.scale = scale
 
   for name, font in pairs(style.fonts) do
-    style[name] = renderer.font.load(font[1], font[2] * scale)
+    derived[name] = renderer.font.load(font[1], font[2] * scale)
   end
 
-  local em = style.font:get_height()
+  local em = derived.font:get_height()
 
-  style.padding = {
+  derived.padding = read_only_padding {
     x = common.round(em * style.em.padding_x),
     y = common.round(em * style.em.padding_y)
   }
 
-  style.tab_width = common.round(em * style.em.tab_width)
+  derived.tab_width = common.round(em * style.em.tab_width)
 
-  style.divider_size = common.round(style.px.divider_size * scale)
-  style.scrollbar_size = common.round(style.px.scrollbar_size * scale)
-  style.scrollbar_hover_size = common.round(style.px.scrollbar_hover_size * scale)
-  style.caret_width = common.round(style.px.caret_width * scale)
+  derived.divider_size = common.round(style.px.divider_size * scale)
+  derived.scrollbar_size = common.round(style.px.scrollbar_size * scale)
+  derived.scrollbar_hover_size = common.round(style.px.scrollbar_hover_size * scale)
+  derived.caret_width = common.round(style.px.caret_width * scale)
 end
 
 return style
