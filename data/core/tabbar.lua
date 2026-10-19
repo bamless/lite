@@ -174,9 +174,10 @@ function TabBar:on_mouse_pressed(button, x, y, clicks)
     return true
   end
 
-  node:set_active_view(node.views[idx])
   if button == "middle" or self:close_overlaps_point(idx, x, y) then
-    node:close_active_view(core.root_view.root_node)
+    node:close_view(core.root_view.root_node, node.views[idx])
+  else
+    node:set_active_view(node.views[idx])
   end
   return true
 end

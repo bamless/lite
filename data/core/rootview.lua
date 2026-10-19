@@ -48,6 +48,7 @@ function Node:new(type)
   self.position = { x = 0, y = 0 }
   self.size = { x = 0, y = 0 }
   self.views = {}
+  self.views_history = {}
   self.divider = 0.5
   if self.type == "leaf" then
     self.tab_bar = TabBar(self)
@@ -130,18 +131,41 @@ function Node:split(dir, view, locked)
 end
 
 
-function Node:close_active_view(root)
+function Node:remove_from_history(view)
+  for i = #self.views_history, 1, -1 do
+    if self.views_history[i] == view then
+      table.remove(self.views_history, i)
+    end
+  end
+end
+
+
+-- Closing a view only moves focus when it was the active one; closing a
+-- background tab leaves both the node's active view and the focus alone.
+function Node:close_view(root, view)
   local do_close = function()
+    -- `try_close` may ask first (unsaved changes), and in the meantime the
+    -- view can already have been closed some other way
+    local idx = self:get_view_idx(view)
+    if not idx then return end
+
     if #self.views > 1 then
-      local idx = self:get_view_idx(self.active_view)
       table.remove(self.views, idx)
-      self:set_active_view(self.views[idx] or self.views[#self.views])
+      self:remove_from_history(view)
+      if view == self.active_view then
+        local previous = self.views_history[#self.views_history]
+        self:set_active_view(previous or self.views[idx] or self.views[#self.views])
+        core.last_active_view = nil
+      elseif core.last_active_view == view then
+        core.last_active_view = nil
+      end
     else
       local parent = self:get_parent_node(root)
       local is_a = (parent.a == self)
       local other = parent[is_a and "b" or "a"]
       if other:get_locked_size() then
         self.views = {}
+        self.views_history = {}
         self:add_view(EmptyView())
       else
         parent:consume(other)
@@ -151,10 +175,15 @@ function Node:close_active_view(root)
         end
         p:set_active_view(p.active_view)
       end
+      core.last_active_view = nil
     end
-    core.last_active_view = nil
   end
-  self.active_view:try_close(do_close)
+  view:try_close(do_close)
+end
+
+
+function Node:close_active_view(root)
+  self:close_view(root, self.active_view)
 end
 
 
@@ -162,7 +191,7 @@ function Node:add_view(view)
   assert(self.type == "leaf", "Tried to add view to non-leaf node")
   assert(not self.locked, "Tried to add view to locked node")
   if self.views[1] and self.views[1]:is(EmptyView) then
-    table.remove(self.views)
+    self:remove_from_history(table.remove(self.views))
   end
   table.insert(self.views, view)
   self:set_active_view(view)
@@ -172,6 +201,8 @@ end
 function Node:set_active_view(view)
   assert(self.type == "leaf", "Tried to set active view on non-leaf node")
   self.active_view = view
+  self:remove_from_history(view)
+  table.insert(self.views_history, view)
   core.set_active_view(view)
 end
 
