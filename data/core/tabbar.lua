@@ -21,7 +21,7 @@ end
 
 
 function TabBar:get_height()
-  return style.font:get_height() + style.padding.y * 2.5
+  return style.font:get_height() + style.padding.y * 3
 end
 
 
