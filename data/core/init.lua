@@ -527,7 +527,9 @@ local run_threads = coroutine.wrap(function()
         elseif wait then
           thread.wake = system.get_time() + wait
         end
-        ran_any_threads = true
+        if not thread.when_awake then
+          ran_any_threads = true
+        end
       end
 
       -- stop running threads if we're about to hit the end of frame
@@ -536,7 +538,9 @@ local run_threads = coroutine.wrap(function()
       end
     end
 
-    if not ran_any_threads then coroutine.yield() end
+    if not ran_any_threads then
+      coroutine.yield()
+    end
   end
 end)
 
