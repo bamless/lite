@@ -66,12 +66,41 @@ function tokenizer.tokenize(syntax, text, state)
     local matched = false
     for n, p in ipairs(syntax.patterns) do
       local pattern = (type(p.pattern) == "table") and p.pattern[1] or p.pattern
-      local s, e = text:find("^" .. pattern, i)
+
+      local s, e
+      local captures
+      if type(p.type) == "table" then
+        assert(type(p.pattern) == "string",
+          "capture types require a single pattern")
+        captures = { text:find("^" .. pattern, i) }
+        s, e = captures[1], captures[2]
+      else
+        s, e = text:find("^" .. pattern, i)
+      end
 
       if s then
         -- matched pattern; make and add token
-        local t = text:sub(s, e)
-        push_token(res, syntax.symbols[t] or p.type, t)
+        if captures then
+          assert(#captures - 2 == #p.type,
+            "each capture must have a token type")
+          local offset = s
+          for capture_idx, token_type in ipairs(p.type) do
+            local t = captures[capture_idx + 2]
+            assert(type(t) == "string",
+              "position captures are not supported")
+            assert(text:sub(offset, offset + #t - 1) == t,
+              "captures must partition the entire match in order")
+            if #t > 0 then
+              push_token(res, syntax.symbols[t] or token_type, t)
+            end
+            offset = offset + #t
+          end
+          assert(offset == e + 1,
+            "captures must partition the entire match in order")
+        else
+          local t = text:sub(s, e)
+          push_token(res, syntax.symbols[t] or p.type, t)
+        end
 
         -- update state if this was a start|end pattern pair
         if type(p.pattern) == "table" then
