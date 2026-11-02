@@ -133,6 +133,57 @@ then be loaded manually as needed by using the `require` function.
 
 Plugins can be downloaded from the [plugins repository](https://github.com/rxi/lite-plugins).
 
+### Context Menus
+
+Right-clicking a view or a tab opens a context menu. Its items come from two
+places: the view that was clicked, and any items plugins registered for that
+kind of view. Plugins add items with `ContextMenu.add`, from the
+`core.contextmenu` module:
+```lua
+local ContextMenu = require "core.contextmenu"
+local DocView = require "core.docview"
+
+ContextMenu.add(DocView, {
+  { command = "reflow:reflow" },
+  { text = "Copy File Name",
+    enabled = function(view) return view.doc.filename ~= nil end,
+    fn = function(view) system.set_clipboard(view.doc.filename) end },
+})
+```
+
+The first argument says which views the items are for. It's either a view
+class, which also matches its subclasses, or a function that takes the clicked
+view and returns true if the items should show.
+
+Each item does one of two things:
+* **`command`**: Runs the named command. The label defaults to the command's
+  name in readable form (`reflow:reflow` shows as "Reflow: Reflow"), the
+  command's shortcut is shown next to it, and the item is greyed out when the
+  command's predicate fails. Right-clicking a view makes it the active view,
+  so commands act on the view that was clicked. Tabs are the exception: the
+  active view doesn't change, so use `fn` for items that act on the clicked
+  tab.
+* **`fn`**: Calls the function with the view the menu was opened on. For a
+  tab, that's the node's `TabBar`.
+
+Items can also set:
+* **`text`**: The label.
+* **`binding`**: The shortcut shown on the right, eg. `"ctrl+s"`.
+* **`enabled`**: `false`, or a function taking the view and returning
+  whether the item can be picked. Disabled items are shown greyed out.
+
+`{ divider = true }` draws a separator line.
+
+The second argument can also be a function `(view, x, y)` that returns the
+items, or `nil` for none, when the menu opens. Use this when the items depend
+on what's under the pointer.
+
+`ContextMenu.add` returns a handle. Pass it to `ContextMenu.remove` to take
+the items away again, for example when a plugin turns itself off.
+
+A plugin that defines its own view gives it a menu by overriding
+`View:get_context_menu(x, y)` instead. It takes the click position and
+returns a list of items, or `nil` for no menu.
 
 ## Color Themes
 Colors themes in lite are lua modules which overwrite the color fields of lite's

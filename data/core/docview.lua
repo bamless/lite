@@ -240,11 +240,31 @@ local function mouse_selection(doc, clicks, line1, col1, line2, col2)
 end
 
 
+local function selection_contains(doc, line, col)
+  if not doc:has_selection() then return false end
+  local line1, col1, line2, col2 = doc:get_selection(true)
+  local after_start = line > line1 or line == line1 and col >= col1
+  local before_end = line < line2 or line == line2 and col <= col2
+  return after_start and before_end
+end
+
+
 function DocView:on_mouse_pressed(button, x, y, clicks)
   local caught = DocView.super.on_mouse_pressed(self, button, x, y, clicks)
   if caught then
     return
   end
+
+  if button == "right" then
+    local line, col = self:resolve_screen_position(x, y)
+    if not selection_contains(self.doc, line, col) then
+      self.doc:toggle_mark(false)
+      self.doc:set_selection(line, col)
+    end
+    self.blink_start = system.get_time()
+    return
+  end
+
   self.doc:toggle_mark(false)
   if keymap.modkeys["shift"] then
     if clicks == 1 then
@@ -258,6 +278,28 @@ function DocView:on_mouse_pressed(button, x, y, clicks)
     self.mouse_selecting = { line, col, clicks = clicks }
   end
   self.blink_start = system.get_time()
+end
+
+
+local function has_selection(view)
+  return view.doc:has_selection()
+end
+
+
+local context_menu = {
+  { command = "doc:cut", text = "Cut", enabled = has_selection },
+  { command = "doc:copy", text = "Copy", enabled = has_selection },
+  { command = "doc:paste", text = "Paste" },
+  { divider = true },
+  { command = "doc:select-lines", text = "Select Line"},
+  { command = "doc:select-all", text = "Select All" },
+  { command = "doc:toggle-line-comments", text = "Toggle Comment",
+    enabled = function(view) return view.doc.syntax.comment ~= nil end },
+}
+
+
+function DocView:get_context_menu()
+  return context_menu
 end
 
 

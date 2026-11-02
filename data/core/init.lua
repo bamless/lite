@@ -405,7 +405,8 @@ function core.on_event(type, ...)
   if type == "textinput" then
     core.root_view:on_text_input(...)
   elseif type == "keypressed" then
-    did_keymap = keymap.on_key_pressed(...)
+    did_keymap = core.root_view.context_menu:on_key_pressed(...)
+      or keymap.on_key_pressed(...)
   elseif type == "keyreleased" then
     keymap.on_key_released(...)
   elseif type == "mousemoved" then
@@ -501,6 +502,7 @@ function core.step()
   core.clip_rect_stack[1] = { 0, 0, width, height }
   renderer.set_clip_rect(table.unpack(core.clip_rect_stack[1]))
   core.root_view:draw()
+  core.root_view.context_menu:draw()
   renderer.end_frame()
   return true
 end

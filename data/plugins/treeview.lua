@@ -171,7 +171,10 @@ function TreeView:on_mouse_pressed(button, x, y, clicks)
     return true -- a scrollbar drag
   end
 
-  if not self.hovered_item then
+  -- only a left click opens files and folds directories
+  -- TODO: give the tree view a context menu (new file, rename, delete, copy
+  -- path)
+  if button ~= "left" or not self.hovered_item then
     return
   elseif self.hovered_item.type == "dir" then
     self.hovered_item.expanded = not self.hovered_item.expanded

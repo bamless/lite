@@ -47,6 +47,11 @@ function keymap.add(map, overwrite)
 end
 
 
+function keymap.is_modkey(k)
+  return modkey_map[k] ~= nil
+end
+
+
 function keymap.get_binding(cmd)
   return keymap.reverse_map[cmd]
 end

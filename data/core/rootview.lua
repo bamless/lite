@@ -6,6 +6,7 @@ local Object = require "core.object"
 local View = require "core.view"
 local DocView = require "core.docview"
 local TabBar = require "core.tabbar"
+local ContextMenu = require "core.contextmenu"
 
 
 local EmptyView = View:extend()
@@ -428,6 +429,7 @@ function RootView:new()
   self.root_node = Node()
   self.deferred_draws = {}
   self.mouse = { x = 0, y = 0 }
+  self.context_menu = ContextMenu()
 end
 
 
@@ -466,26 +468,39 @@ end
 
 
 function RootView:on_mouse_pressed(button, x, y, clicks)
+  if self.context_menu:on_mouse_pressed(button, x, y) then
+    return
+  end
+
   local div = self.root_node:get_divider_overlapping_point(x, y)
   if div and div:is_resizable() then
     self.dragged_divider = div
     return
   end
+
   local node = self.root_node:get_child_overlapping_point(x, y)
+  local menu_target
   if node:should_show_tabs() and node.tab_bar:overlaps_point(x, y) then
+    menu_target = node.tab_bar
     node.tab_bar:on_mouse_pressed(button, x, y, clicks)
   else
+    menu_target = node.active_view
     core.set_active_view(node.active_view)
     node.active_view:on_mouse_pressed(button, x, y, clicks)
+  end
+  if button == "right" then
+    local items = ContextMenu.collect_items(menu_target, x, y)
+    if items then self.context_menu:open(items, menu_target, x, y) end
   end
 end
 
 
-function RootView:on_mouse_released(...)
+function RootView:on_mouse_released(button, x, y, ...)
   if self.dragged_divider then
     self.dragged_divider = nil
   end
-  self.root_node:on_mouse_released(...)
+  self.root_node:on_mouse_released(button, x, y, ...)
+  self.context_menu:on_mouse_released(button, x, y)
 end
 
 
@@ -507,6 +522,15 @@ function RootView:on_mouse_moved(x, y, dx, dy)
   end
 
   self.mouse.x, self.mouse.y = x, y
+
+  -- the views underneath don't see the pointer while the menu is open, so
+  -- they don't show hover effects through it
+  if self.context_menu.visible then
+    self.context_menu:on_mouse_moved(x, y)
+    system.set_cursor("arrow")
+    return
+  end
+
   self.root_node:on_mouse_moved(x, y, dx, dy)
 
   local node = self.root_node:get_child_overlapping_point(x, y)
@@ -522,6 +546,9 @@ end
 
 
 function RootView:on_mouse_wheel(...)
+  if self.context_menu.visible then
+    self.context_menu:close()
+  end
   local x, y = self.mouse.x, self.mouse.y
   local node = self.root_node:get_child_overlapping_point(x, y)
   if node:should_show_tabs() and node.tab_bar:overlaps_point(x, y) then
@@ -533,6 +560,7 @@ end
 
 
 function RootView:on_text_input(...)
+  if self.context_menu.visible then return end
   core.active_view:on_text_input(...)
 end
 

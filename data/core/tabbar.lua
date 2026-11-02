@@ -2,6 +2,7 @@ local core = require "core"
 local common = require "core.common"
 local config = require "core.config"
 local style = require "core.style"
+local keymap = require "core.keymap"
 local View = require "core.view"
 
 
@@ -34,11 +35,6 @@ local function close_rect(x, y, w, h)
 end
 
 
--- a tab is as wide as its name plus the close button, but never wider than
--- `style.tab_width`; longer names get truncated when drawn. The name lives
--- between the left padding and the close button (see `TabBar:draw`), so the
--- fitting width is those parts added up, plus a half padding gap before the
--- button so the name doesn't touch it.
 function TabBar:get_tab_width(idx)
   local s = style.icon_font:get_height()
   local pad = style.padding.x / 2
@@ -123,7 +119,8 @@ end
 
 
 function TabBar:update_hover(x, y)
-  if self:pointer_on_scrollbar() then
+  -- also clear hovered tab if context menu is open
+  if self:pointer_on_scrollbar() or core.root_view.context_menu.visible then
     self.hovered_tab, self.hovered_close = nil, nil
     return
   end
@@ -177,10 +174,89 @@ function TabBar:on_mouse_pressed(button, x, y, clicks)
 
   if button == "middle" or self:close_overlaps_point(idx, x, y) then
     node:close_view(core.root_view.root_node, node.views[idx])
-  else
+  elseif button == "left" then
     node:set_active_view(node.views[idx])
   end
   return true
+end
+
+
+-- TODO: ask about the dirty docs one after the other instead of skipping them.
+--       right now only one prompt at a time is supported for unsaved docs.
+local function close_views(node, views)
+  local skipped = 0
+  for _, view in ipairs(views) do
+    if view.doc and view.doc:is_dirty() then
+      skipped = skipped + 1
+    else
+      node:close_view(core.root_view.root_node, view)
+    end
+  end
+  if skipped > 0 then
+    core.log("Left %d tab%s with unsaved changes open", skipped,
+      skipped == 1 and "" or "s")
+  end
+end
+
+
+function TabBar:get_context_menu(x, y)
+  local idx = self:get_tab_overlapping_point(x, y)
+  if not idx then return nil end
+  local node = self.node
+  local view = node.views[idx]
+
+  local function others()
+    local res = {}
+    for _, v in ipairs(node.views) do
+      if v ~= view then table.insert(res, v) end
+    end
+    return res
+  end
+
+  local function to_the_right()
+    local res = {}
+    -- the index is looked up again because tabs can move while the menu is
+    -- open, e.g. when another one is closed by a shortcut
+    local i = node:get_view_idx(view)
+    for j = (i or #node.views) + 1, #node.views do
+      table.insert(res, node.views[j])
+    end
+    return res
+  end
+
+  local filename = view.doc and view.doc.filename
+
+  return {
+    {
+      text = "Close",
+      binding = keymap.get_binding("root:close"),
+      fn = function()
+        node:close_view(core.root_view.root_node, view)
+      end
+    },
+    {
+      text = "Close Others",
+      enabled = #node.views > 1,
+      fn = function()
+        close_views(node, others())
+      end
+    },
+    {
+      text = "Close to the Right",
+      enabled = idx < #node.views,
+      fn = function()
+        close_views(node, to_the_right())
+      end
+    },
+    { divider = true },
+    {
+      text = "Copy Path",
+      enabled = filename ~= nil,
+      fn = function()
+        system.set_clipboard(system.absolute_path(filename))
+      end
+    },
+  }
 end
 
 
@@ -189,8 +265,6 @@ function TabBar:draw()
   self:draw_background(style.background2)
 
   core.push_clip_rect(self.position.x, self.position.y, self.size.x, self.size.y)
-  -- walk the tabs left to right, so each one's position is the previous one's
-  -- end rather than a fresh sum over all the tabs before it
   local x, y, h = self.position.x - self.scroll.x, self.position.y, self.size.y
   for i, view in ipairs(self.node.views) do
     local w = self:get_tab_width(i)

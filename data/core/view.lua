@@ -57,6 +57,12 @@ function View:try_close(do_close)
 end
 
 
+-- The items of the menu shown when the view is right-clicked at `x`, `y`, or
+-- nil for none. See `core.contextmenu` for what an item looks like.
+function View:get_context_menu(x, y)
+end
+
+
 function View:get_name()
   return "---"
 end
