@@ -3,6 +3,7 @@
 
 int luaopen_system(lua_State *L);
 int luaopen_renderer(lua_State *L);
+int luaopen_markdown(lua_State *L);
 
 
 #if LUA_VERSION_NUM < 502
@@ -31,6 +32,7 @@ static void luaL_requiref(lua_State *L, const char *modname,
 static const luaL_Reg libs[] = {
   { "system",    luaopen_system     },
   { "renderer",  luaopen_renderer   },
+  { "markdown",  luaopen_markdown   },
   { NULL, NULL }
 };
 

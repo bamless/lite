@@ -17,6 +17,10 @@ void ren_set_clip_rect(RenRect rect);
 void ren_get_size(int *x, int *y);
 
 RenImage* ren_new_image(int width, int height);
+RenImage* ren_load_image(const char *filename, const char **error);
+RenImage* ren_resize_image(RenImage *image, int width, int height);
+void ren_get_image_size(RenImage *image, int *width, int *height);
+unsigned ren_get_image_id(RenImage *image);
 void ren_free_image(RenImage *image);
 
 RenFont* ren_load_font(const char *filename, float size);
@@ -29,6 +33,7 @@ int ren_get_font_height(RenFont *font);
 
 void ren_draw_rect(RenRect rect, RenColor color);
 void ren_draw_image(RenImage *image, RenRect *sub, int x, int y, RenColor color);
+void ren_blit_image(RenImage *image, int x, int y);
 int ren_draw_text(RenFont *font, const char *text, int x, int y, RenColor color);
 
 #endif

@@ -46,6 +46,7 @@ end
 
 
 function Doc:reset()
+  self:bump_content_version()
   self.lines = { "\n" }
   self.selection = { a = { line=1, col=1 }, b = { line=1, col=1 } }
   self.undo_stack = { idx = 1 }
@@ -118,6 +119,16 @@ end
 
 function Doc:get_change_id()
   return self.undo_stack.idx
+end
+
+
+function Doc:get_content_version()
+  return self.content_version
+end
+
+
+function Doc:bump_content_version()
+  self.content_version = (self.content_version or 0) + 1
 end
 
 
@@ -286,6 +297,7 @@ function Doc:raw_insert(line, col, text, undo_stack, time)
 
   -- splice lines into line array
   splice(self.lines, line, 1, lines)
+  self:bump_content_version()
 
   -- push undo
   local line2, col2 = self:position_offset(line, col, #text)
@@ -313,6 +325,7 @@ function Doc:raw_remove(line1, col1, line2, col2, undo_stack, time)
 
   -- splice line into line array
   splice(self.lines, line1, line2 - line1 + 1, { before .. after })
+  self:bump_content_version()
 
   -- update highlighter and assure selection is in bounds
   self.highlighter:invalidate(line1)

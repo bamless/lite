@@ -454,7 +454,7 @@ function RootView:open_doc(doc)
     core.set_active_view(node.active_view)
   end
   for i, view in ipairs(node.views) do
-    if view.doc == doc then
+    if view.doc == doc and view:is(DocView) then
       node:set_active_view(node.views[i])
       return view
     end

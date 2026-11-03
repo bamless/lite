@@ -6,6 +6,7 @@
 #include "lualib.h"   // IWYU pragma: export
 
 #define API_TYPE_FONT "Font"
+#define API_TYPE_IMAGE "Image"
 
 void api_load_libs(lua_State *L);
 

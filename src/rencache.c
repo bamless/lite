@@ -24,12 +24,14 @@
 #define CELLS_Y ((MAX_SCREEN_HEIGHT + CELL_SIZE - 1) / CELL_SIZE + 1)
 #define COMMAND_BUF_SIZE (1024 * 1024 * 5) /* 5Mib */
 
-enum { FREE_FONT, SET_CLIP, DRAW_TEXT, DRAW_RECT };
+enum { FREE_FONT, FREE_IMAGE, SET_CLIP, DRAW_TEXT, DRAW_RECT, DRAW_IMAGE };
 
 
 typedef struct {
   RenRect rect;
   RenFont *font;
+  RenImage *image;
+  unsigned image_id;
   int type, size;
   RenColor color;
   int tab_width;
@@ -155,6 +157,12 @@ void rencache_free_font(RenFont *font) {
 }
 
 
+void rencache_free_image(RenImage *image) {
+  Command *cmd = push_command(FREE_IMAGE, sizeof(Command));
+  if (cmd) { cmd->image = image; }
+}
+
+
 void rencache_set_clip_rect(RenRect rect) {
   Command *cmd = push_command(SET_CLIP, sizeof(Command));
   if (cmd) { cmd->rect = intersect_rects(rect, screen_rect); }
@@ -167,6 +175,19 @@ void rencache_draw_rect(RenRect rect, RenColor color) {
   if (cmd) {
     cmd->rect = rect;
     cmd->color = color;
+  }
+}
+
+
+void rencache_draw_image(RenImage *image, int x, int y) {
+  RenRect rect = { x, y, 0, 0 };
+  ren_get_image_size(image, &rect.width, &rect.height);
+  if (!rects_overlap(screen_rect, rect)) { return; }
+  Command *cmd = push_command(DRAW_IMAGE, sizeof(Command));
+  if (cmd) {
+    cmd->rect = rect;
+    cmd->image = image;
+    cmd->image_id = ren_get_image_id(image);
   }
 }
 
@@ -277,7 +298,7 @@ void rencache_end_frame(void) {
       /* no point in hashing clip commands; they don't draw, only affect bounds */
       continue;
     }
-    if (cmd->type == FREE_FONT) {
+    if (cmd->type == FREE_FONT || cmd->type == FREE_IMAGE) {
       has_free_commands = true;
       /* also no point in hashing font free commands */
       continue;
@@ -325,6 +346,7 @@ void rencache_end_frame(void) {
     while (next_command(&cmd)) {
       switch (cmd->type) {
         case FREE_FONT:
+        case FREE_IMAGE:
           /* no-op */
           break;
         case SET_CLIP:
@@ -339,6 +361,10 @@ void rencache_end_frame(void) {
           if (!rects_intersect(cmd->rect, clip)) { break; }
           ren_set_font_tab_width(cmd->font, cmd->tab_width);
           ren_draw_text(cmd->font, command_text(cmd), cmd->text_x, cmd->text_y, cmd->color);
+          break;
+        case DRAW_IMAGE:
+          if (!rects_intersect(cmd->rect, clip)) { break; }
+          ren_blit_image(cmd->image, cmd->rect.x, cmd->rect.y);
           break;
       }
     }
@@ -360,6 +386,8 @@ void rencache_end_frame(void) {
     while (next_command(&cmd)) {
       if (cmd->type == FREE_FONT) {
         ren_free_font(cmd->font);
+      } else if (cmd->type == FREE_IMAGE) {
+        ren_free_image(cmd->image);
       }
     }
   }

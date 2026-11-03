@@ -4,6 +4,8 @@ local config = require "core.config"
 local style = require "core.style"
 local keymap = require "core.keymap"
 local View = require "core.view"
+local Tooltip = require "core.tooltip"
+local DocView = require "core.docview"
 
 
 local TabBar = View:extend()
@@ -13,6 +15,7 @@ function TabBar:new(node)
   TabBar.super.new(self)
   self.node = node
   self.scrollable = true
+  self.tooltip = Tooltip()
 end
 
 
@@ -141,21 +144,14 @@ function TabBar:update()
     self:scroll_to_tab(self.node:get_view_idx(self.node.active_view))
   end
 
-  if self.tooltip_tab then
-    local now = system.get_time()
-    if now < self.tooltip_shown_at then
-      core.request_wakeup(self.tooltip_shown_at)
-    elseif now < self.tooltip_shown_at + config.tooltip_fade_time then
-      core.request_redraw()
-    end
-  end
+  self.tooltip:update()
 end
 
 
 function TabBar:on_mouse_wheel(y, x)
   local delta = (x ~= 0) and x or -y
   self.scroll.to.x = self.scroll.to.x + delta * config.mouse_wheel_scroll * style.scale
-  self.tooltip_tab = nil
+  self.tooltip:hide()
 end
 
 
@@ -186,7 +182,7 @@ end
 local function close_views(node, views)
   local skipped = 0
   for _, view in ipairs(views) do
-    if view.doc and view.doc:is_dirty() then
+    if view:is(DocView) and view.doc:is_dirty() then
       skipped = skipped + 1
     else
       node:close_view(core.root_view.root_node, view)
@@ -319,45 +315,12 @@ function TabBar:draw()
   self:draw_scrollbar()
 
   local tooltip_tab = not self.hovered_close and self.hovered_tab or nil
-  if tooltip_tab ~= self.tooltip_tab then
-    self.tooltip_tab = tooltip_tab
-    self.tooltip_shown_at = system.get_time() + config.tooltip_delay
+  self.tooltip:set_target(tooltip_tab)
+  local view = tooltip_tab and self.node.views[tooltip_tab]
+  if view then
+    local text = view.doc and view.doc.filename or view:get_name()
+    self.tooltip:draw(text, self:get_tab_rect(tooltip_tab), self.position.y + self.size.y)
   end
-
-  if tooltip_tab and system.get_time() >= self.tooltip_shown_at then
-    core.root_view:defer_draw(self.draw_tooltip, self, tooltip_tab)
-  end
-end
-
-
-function TabBar:draw_tooltip(idx)
-  local view = self.node.views[idx]
-  if not view then return end
-
-  local fade = (system.get_time() - self.tooltip_shown_at) / config.tooltip_fade_time
-  local alpha = common.clamp(fade, 0, 1)
-
-  local function faded(color)
-    return { color[1], color[2], color[3], (color[4] or 255) * alpha }
-  end
-
-  local text = view.doc and view.doc.filename or view:get_name()
-
-  local font = style.font
-  local pad_x, pad_y = style.padding.x / 2, style.padding.y / 2
-  local w = font:get_width(text) + pad_x * 2
-  local h = font:get_height() + pad_y * 2
-
-  local tab_x = self:get_tab_rect(idx)
-  local root = core.root_view
-  local x = math.min(tab_x, root.position.x + root.size.x - w)
-  x = math.max(x, root.position.x)
-  local y = self.position.y + self.size.y
-
-  local ds = style.divider_size
-  renderer.draw_rect(x - ds, y - ds, w + ds * 2, h + ds * 2, faded(style.divider))
-  renderer.draw_rect(x, y, w, h, faded(style.background3))
-  common.draw_text(font, faded(style.text), text, "left", x + pad_x, y, w, h)
 end
 
 

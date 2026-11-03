@@ -3,13 +3,17 @@
 #include <assert.h>
 #include <math.h>
 #include "lib/stb/stb_truetype.h"
+#include "lib/stb/stb_image.h"
 #include "renderer.h"
 
-#define MAX_GLYPHSET 256
+/* Glyphs are baked in sets of 256 consecutive codepoints, enough to cover all of Unicode. */
+#define MAX_CODEPOINT 0x10FFFF
+#define MAX_GLYPHSET ((MAX_CODEPOINT + 1) / 256)
 
 struct RenImage {
   RenColor *pixels;
   int width, height;
+  unsigned id;
 };
 
 typedef struct {
@@ -39,20 +43,34 @@ static void* check_alloc(void *ptr) {
 }
 
 
-static const char* utf8_to_codepoint(const char *p, unsigned *dst) {
+static const char* utf8_to_codepoint(const char* p, unsigned* dst) {
+  const unsigned char* s = (const unsigned char*)p;
   unsigned res, n;
-  switch (*p & 0xf0) {
-    case 0xf0 :  res = *p & 0x07;  n = 3;  break;
-    case 0xe0 :  res = *p & 0x0f;  n = 2;  break;
-    case 0xd0 :
-    case 0xc0 :  res = *p & 0x1f;  n = 1;  break;
-    default   :  res = *p;         n = 0;  break;
+  if(s[0] < 0x80) {
+      res = s[0];
+      n = 0;
+  } else if((s[0] & 0xe0) == 0xc0) {
+      res = s[0] & 0x1f;
+      n = 1;
+  } else if((s[0] & 0xf0) == 0xe0) {
+      res = s[0] & 0x0f;
+      n = 2;
+  } else if((s[0] & 0xf8) == 0xf0) {
+      res = s[0] & 0x07;
+      n = 3;
+  } else {
+      *dst = 0xFFFD;
+      return p + 1;
   }
-  while (n--) {
-    res = (res << 6) | (*(++p) & 0x3f);
+  for(unsigned i = 1; i <= n; i++) {
+      if((s[i] & 0xc0) != 0x80) {
+          *dst = 0xFFFD;
+          return p + i;
+      }
+      res = (res << 6) | (s[i] & 0x3f);
   }
-  *dst = res;
-  return p + 1;
+  *dst = res > MAX_CODEPOINT ? 0xFFFD : res;
+  return p + n + 1;
 }
 
 
@@ -96,7 +114,63 @@ RenImage* ren_new_image(int width, int height) {
   image->pixels = (void*) (image + 1);
   image->width = width;
   image->height = height;
+  static unsigned next_id = 0;
+  image->id = ++next_id;
   return image;
+}
+
+
+RenImage* ren_load_image(const char *filename, const char **error) {
+  int width, height, channels;
+  unsigned char *data = stbi_load(filename, &width, &height, &channels, 4);
+  if (!data) {
+    *error = stbi_failure_reason();
+    return NULL;
+  }
+  RenImage *image = ren_new_image(width, height);
+  for (int i = 0; i < width * height; i++) {
+    unsigned char *p = data + i * 4;
+    image->pixels[i] = (RenColor) { .r = p[0], .g = p[1], .b = p[2], .a = p[3] };
+  }
+  stbi_image_free(data);
+  return image;
+}
+
+
+RenImage* ren_resize_image(RenImage *src, int width, int height) {
+  RenImage *dst = ren_new_image(width, height);
+  for (int y = 0; y < height; y++) {
+    int sy0 = (int64_t) y * src->height / height;
+    int sy1 = (int64_t) (y + 1) * src->height / height;
+    if (sy1 <= sy0) { sy1 = sy0 + 1; }
+    for (int x = 0; x < width; x++) {
+      int sx0 = (int64_t) x * src->width / width;
+      int sx1 = (int64_t) (x + 1) * src->width / width;
+      if (sx1 <= sx0) { sx1 = sx0 + 1; }
+      uint64_t r = 0, g = 0, b = 0, a = 0, n = 0;
+      for (int sy = sy0; sy < sy1; sy++) {
+        for (int sx = sx0; sx < sx1; sx++) {
+          RenColor c = src->pixels[sx + sy * src->width];
+          r += c.r * c.a; g += c.g * c.a; b += c.b * c.a; a += c.a;
+          n++;
+        }
+      }
+      dst->pixels[x + y * width] = a == 0 ? (RenColor) { 0 } : (RenColor) {
+        .r = r / a, .g = g / a, .b = b / a, .a = a / n };
+    }
+  }
+  return dst;
+}
+
+
+void ren_get_image_size(RenImage *image, int *width, int *height) {
+  *width = image->width;
+  *height = image->height;
+}
+
+
+unsigned ren_get_image_id(RenImage *image) {
+  return image->id;
 }
 
 
@@ -151,7 +225,7 @@ retry:
 
 
 static GlyphSet* get_glyphset(RenFont *font, int codepoint) {
-  int idx = (codepoint >> 8) % MAX_GLYPHSET;
+  int idx = codepoint >> 8;
   if (!font->sets[idx]) {
     font->sets[idx] = load_glyphset(font, idx);
   }
@@ -333,19 +407,41 @@ void ren_draw_rect(RenRect rect, RenColor color) {
 }
 
 
+static bool clip_image(RenRect *sub, int *x, int *y) {
+  int n;
+  if ((n = clip.left - *x) > 0) { sub->width  -= n; sub->x += n; *x += n; }
+  if ((n = clip.top  - *y) > 0) { sub->height -= n; sub->y += n; *y += n; }
+  if ((n = *x + sub->width  - clip.right ) > 0) { sub->width  -= n; }
+  if ((n = *y + sub->height - clip.bottom) > 0) { sub->height -= n; }
+  return sub->width > 0 && sub->height > 0;
+}
+
+
+/* Draws a whole image as is. Opaque pixels are copied exactly. */
+void ren_blit_image(RenImage *image, int x, int y) {
+  RenRect sub = { 0, 0, image->width, image->height };
+  if (!clip_image(&sub, &x, &y)) { return; }
+
+  SDL_Surface *surf = SDL_GetWindowSurface(window);
+  RenColor *s = image->pixels + sub.x + sub.y * image->width;
+  RenColor *d = (RenColor*) surf->pixels + x + y * surf->w;
+  for (int j = 0; j < sub.height; j++) {
+    for (int i = 0; i < sub.width; i++) {
+      if (s[i].a == 0xff) {
+        d[i] = s[i];
+      } else if (s[i].a != 0) {
+        d[i] = blend_pixel(d[i], s[i]);
+      }
+    }
+    s += image->width;
+    d += surf->w;
+  }
+}
+
+
 void ren_draw_image(RenImage *image, RenRect *sub, int x, int y, RenColor color) {
   if (color.a == 0) { return; }
-
-  /* clip */
-  int n;
-  if ((n = clip.left - x) > 0) { sub->width  -= n; sub->x += n; x += n; }
-  if ((n = clip.top  - y) > 0) { sub->height -= n; sub->y += n; y += n; }
-  if ((n = x + sub->width  - clip.right ) > 0) { sub->width  -= n; }
-  if ((n = y + sub->height - clip.bottom) > 0) { sub->height -= n; }
-
-  if (sub->width <= 0 || sub->height <= 0) {
-    return;
-  }
+  if (!clip_image(sub, &x, &y)) { return; }
 
   /* draw */
   SDL_Surface *surf = SDL_GetWindowSurface(window);

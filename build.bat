@@ -25,7 +25,7 @@ echo compiling (windows)...
 windres res.rc -O coff -o res.res
 if errorlevel 1 goto fail
 
-gcc src/*.c src/api/*.c src/lib/stb/*.c^
+gcc src/*.c src/api/*.c src/lib/stb/*.c src/lib/md4c/*.c^
     -O3 -s -std=gnu11 -fno-strict-aliasing -Isrc -DNDEBUG^
     -I%LUAJIT_DIR%/src^
     -Iwinlib/SDL2-2.0.10/x86_64-w64-mingw32/include^
