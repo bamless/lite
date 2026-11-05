@@ -10,7 +10,7 @@ config.treeview_size = 200
 
 local function get_depth(filename)
   local n = 0
-  for sep in filename:gmatch("[\\/]") do
+  for _ in filename:gmatch("[\\/]") do
     n = n + 1
   end
   return n
@@ -171,9 +171,6 @@ function TreeView:on_mouse_pressed(button, x, y, clicks)
     return true -- a scrollbar drag
   end
 
-  -- only a left click opens files and folds directories
-  -- TODO: give the tree view a context menu (new file, rename, delete, copy
-  -- path)
   if button ~= "left" or not self.hovered_item then
     return
   elseif self.hovered_item.type == "dir" then
@@ -184,6 +181,297 @@ function TreeView:on_mouse_pressed(button, x, y, clicks)
       core.root_view:open_doc(core.open_doc(self.hovered_item.filename))
     end)
   end
+end
+
+
+-- -----------------------------------------------------------------------------
+-- Filesystem helpers
+-- -----------------------------------------------------------------------------
+
+
+local function parent_dir(path)
+  return path:match("^(.+)[\\/][^\\/]+$") or "."
+end
+
+
+local function each_ancestor(path)
+  return coroutine.wrap(function()
+    local i = 1
+    while true do
+      local j = path:find("[\\/]", i)
+      if not j then break end
+      if j > 1 then coroutine.yield(path:sub(1, j - 1)) end
+      i = j + 1
+    end
+    coroutine.yield(path)
+  end)
+end
+
+
+-- Like `mkdir -p`
+local function mkdir_parent(path)
+  if path == "." or path == "" then return true end
+  local info = system.get_file_info(path)
+  if info then
+    if info.type == "dir" then return true end
+    return nil, string.format("\"%s\" exists and is not a directory", path)
+  end
+  local ok, err = mkdir_parent(parent_dir(path))
+  if not ok then return nil, err end
+  ok, err = system.mkdir(path)
+  if not ok then return nil, string.format("%s: %s", path, err) end
+  return true
+end
+
+
+local function is_real_dir(info)
+  return info and info.type == "dir" and not info.symlink
+end
+
+
+local function remove_recursive(path)
+  local info = system.get_file_info(path)
+  if is_real_dir(info) then
+    for _, name in ipairs(system.list_dir(path) or {}) do
+      local ok, err = remove_recursive(path .. PATHSEP .. name)
+      if not ok then return nil, err end
+    end
+    return system.rmdir(path)
+  end
+  return os.remove(path)
+end
+
+
+local function count_entries(path)
+  local n = 0
+  for _, name in ipairs(system.list_dir(path) or {}) do
+    local child = path .. PATHSEP .. name
+    n = n + 1
+    if is_real_dir(system.get_file_info(child)) then
+      n = n + count_entries(child)
+    end
+  end
+  return n
+end
+
+
+local function docs_under(path)
+  local abs = system.absolute_path(path)
+  local res = {}
+  if not abs then return res end
+  for _, doc in ipairs(core.docs) do
+    local doc_abs = doc.filename and system.absolute_path(doc.filename)
+    if doc_abs and (doc_abs == abs or doc_abs:sub(1, #abs + 1) == abs .. PATHSEP) then
+      table.insert(res, { doc = doc, suffix = doc_abs:sub(#abs + 1) })
+    end
+  end
+  return res
+end
+
+
+local function shell_quote(str)
+  return "'" .. str:gsub("'", "'\\''") .. "'"
+end
+
+
+-- -----------------------------------------------------------------------------
+-- File operations
+-- -----------------------------------------------------------------------------
+
+
+function TreeView:expand_to(path)
+  for dir in each_ancestor(path) do
+    self:get_cached({ filename = dir, type = "dir" }).expanded = true
+  end
+  self.metrics = nil
+end
+
+
+local function prompt_new_entry(label, dir, create)
+  core.command_view:set_text(dir == "." and "" or dir .. PATHSEP)
+  core.command_view:enter(label, function(path)
+    path = path:gsub("[\\/]+$", "")
+    if path == "" then return end
+    if system.get_file_info(path) then
+      core.error("\"%s\" already exists", path)
+      return
+    end
+    create(path)
+    core.rescan_project()
+  end, common.path_suggest)
+end
+
+
+function TreeView:new_file(dir)
+  prompt_new_entry("New File", dir, function(path)
+    local ok, err = mkdir_parent(parent_dir(path))
+    if not ok then core.error("Could not create \"%s\": %s", path, err) return end
+    local doc = core.open_doc()
+    core.root_view:open_doc(doc)
+    doc:save(path)
+    self:expand_to(parent_dir(path))
+    core.log("Created \"%s\"", path)
+  end)
+end
+
+
+function TreeView:new_folder(dir)
+  prompt_new_entry("New Folder", dir, function(path)
+    local ok, err = mkdir_parent(path)
+    if not ok then core.error("Could not create \"%s\": %s", path, err) return end
+    self:expand_to(parent_dir(path))
+    core.log("Created folder \"%s\"", path)
+  end)
+end
+
+
+function TreeView:rename(item)
+  local old = item.filename
+  core.command_view:set_text(old, true)
+  core.command_view:enter("Rename", function(new)
+    new = new:gsub("[\\/]+$", "")
+    if new == "" or new == old then return end
+    if system.get_file_info(new) then
+      core.error("\"%s\" already exists", new)
+      return
+    end
+
+    local docs = docs_under(old)
+
+    local ok, err = mkdir_parent(parent_dir(new))
+    if ok then ok, err = os.rename(old, new) end
+    if not ok then
+      core.error("Could not rename \"%s\": %s", old, err)
+      return
+    end
+
+    for _, entry in ipairs(docs) do
+      entry.doc.filename = new .. entry.suffix
+      entry.doc:reset_syntax()
+    end
+
+    -- carry over openness under the filetree being renamed
+    local expanded = {}
+    for filename, cached in pairs(self.cache) do
+      if cached.expanded
+      and (filename == old or filename:sub(1, #old + 1) == old .. PATHSEP) then
+        table.insert(expanded, new .. filename:sub(#old + 1))
+      end
+    end
+    for _, filename in ipairs(expanded) do
+      self:expand_to(filename)
+    end
+    self:expand_to(parent_dir(new))
+
+    core.rescan_project()
+    core.log("Renamed \"%s\" to \"%s\"", old, new)
+  end, common.path_suggest)
+end
+
+
+-- TODO: ask about the dirty docs one after the other instead of leaving them
+--       open (?)
+function TreeView:delete(item)
+  local path = item.filename
+  local msg
+  if item.type == "dir" then
+    local n = count_entries(path)
+    msg = n == 0 and string.format("Delete the empty folder \"%s\"?", path)
+      or string.format("Delete the folder \"%s\" and the %d entr%s inside it?",
+        path, n, n == 1 and "y" or "ies")
+  else
+    msg = string.format("Delete \"%s\"?", path)
+  end
+  if not system.show_confirm_dialog("Delete", msg) then return end
+
+  -- close the views of what is about to go, but don't throw away unsaved
+  -- changes: those docs stay open and can still be saved somewhere
+  local root = core.root_view.root_node
+  local kept = 0
+  for _, entry in ipairs(docs_under(path)) do
+    if entry.doc:is_dirty() then
+      kept = kept + 1
+    else
+      for _, view in ipairs(core.get_views_referencing_doc(entry.doc)) do
+        local node = root:get_node_for_view(view)
+        if node then node:close_view(root, view) end
+      end
+    end
+  end
+
+  local ok, err = remove_recursive(path)
+  core.rescan_project()
+  if not ok then
+    core.error("Could not delete \"%s\": %s", path, err)
+    return
+  end
+  core.log("Deleted \"%s\"", path)
+  if kept > 0 then
+    core.log("Left %d tab%s with unsaved changes open", kept,
+      kept == 1 and "" or "s")
+  end
+end
+
+
+local function open_item(path)
+  local abs = system.absolute_path(path)
+  if not abs then return end
+  if PLATFORM == "Windows" then
+    system.exec(string.format('explorer /select,"%s"', abs))
+  elseif PLATFORM == "Mac OS X" then
+    system.exec("open -R " .. shell_quote(abs))
+  else
+    local info = system.get_file_info(abs)
+    local dir = info and info.type == "dir" and abs or parent_dir(abs)
+    system.exec("xdg-open " .. shell_quote(dir))
+  end
+end
+
+
+-- -----------------------------------------------------------------------------
+-- Context menu
+-- -----------------------------------------------------------------------------
+
+
+function TreeView:get_item_overlapping_point(px, py)
+  for item, x, y, w, h in self:each_item() do
+    if px > x and py > y and px <= x + w and py <= y + h then
+      return item
+    end
+  end
+end
+
+
+function TreeView:get_context_menu(x, y)
+  if self:pointer_on_scrollbar() then return nil end
+  local item = self:get_item_overlapping_point(x, y)
+
+  -- a click below the last entry is about the project root
+  local dir = not item and "."
+    or item.type == "dir" and item.filename
+    or parent_dir(item.filename)
+
+  local items = {
+    { text = "New File",   fn = function() self:new_file(dir) end },
+    { text = "New Folder", fn = function() self:new_folder(dir) end },
+  }
+  if item then
+    table.insert(items, { divider = true })
+    table.insert(items, { text = "Rename", fn = function() self:rename(item) end })
+    table.insert(items, { text = "Delete", fn = function() self:delete(item) end })
+    table.insert(items, { divider = true })
+    table.insert(items, { text = "Copy Path",
+      fn = function() system.set_clipboard(item.abs_filename) end })
+    table.insert(items, { text = "Copy Relative Path",
+      fn = function() system.set_clipboard(item.filename) end })
+  end
+  table.insert(items, { divider = true })
+
+  local open_label = (not item or item.type == "dir")
+    and "Open in File Manager" or "Open Containing Folder"
+  table.insert(items, { text = open_label,
+    fn = function() open_item(item and item.filename or ".") end })
+  return items
 end
 
 

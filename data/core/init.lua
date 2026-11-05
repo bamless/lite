@@ -42,6 +42,8 @@ end
 update_scale()
 
 
+local rescan_requested = false
+
 local function project_scan_thread()
   local function diff_files(a, b)
     if #a ~= #b then return true end
@@ -92,15 +94,26 @@ local function project_scan_thread()
   while true do
     -- get project files and replace previous table if the new table is
     -- different
+    rescan_requested = false
     local t = get_files(".")
     if diff_files(core.project_files, t) then
       core.project_files = t
       core.request_redraw()
     end
 
-    -- wait for next scan
-    coroutine.yield(config.project_scan_rate)
+    -- wait for next scan, unless someone asked for one during this scan
+    if not rescan_requested then
+      coroutine.yield(config.project_scan_rate)
+    end
   end
+end
+
+
+function core.rescan_project()
+  rescan_requested = true
+  local thread = core.threads["project_scan"]
+  if thread then thread.wake = 0 end
+  core.request_redraw()
 end
 
 
@@ -139,7 +152,7 @@ function core.init()
   core.root_view.root_node:split("down", core.command_view, true)
   core.root_view.root_node.b:split("down", core.status_view, true)
 
-  core.add_thread(project_scan_thread)
+  core.add_thread(project_scan_thread, "project_scan")
   command.add_defaults()
   local got_plugin_error = not core.load_plugins()
   local got_user_error = not core.try(require, "user")

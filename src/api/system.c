@@ -11,8 +11,10 @@
 #include <string.h>
 #include <sys/stat.h>
 #include "api.h"
+
 #ifdef _WIN32
   #include <windows.h>
+  #include <direct.h>
 #endif
 
 extern SDL_Window *window;
@@ -328,6 +330,20 @@ static int f_get_file_info(lua_State *L) {
   }
 
   lua_newtable(L);
+
+#ifdef _WIN32
+  DWORD attrs = GetFileAttributesA(path);
+  bool is_link = attrs != INVALID_FILE_ATTRIBUTES
+    && (attrs & FILE_ATTRIBUTE_REPARSE_POINT);
+#else
+  struct stat ls;
+  bool is_link = lstat(path, &ls) == 0 && S_ISLNK(ls.st_mode);
+#endif
+  if (is_link) {
+    lua_pushboolean(L, 1);
+    lua_setfield(L, -2, "symlink");
+  }
+
   lua_pushnumber(L, s.st_mtime);
   lua_setfield(L, -2, "modified");
 
@@ -343,6 +359,40 @@ static int f_get_file_info(lua_State *L) {
   }
   lua_setfield(L, -2, "type");
 
+  return 1;
+}
+
+
+static int f_mkdir(lua_State *L) {
+  const char *path = luaL_checkstring(L, 1);
+#ifdef _WIN32
+  int err = _mkdir(path);
+#else
+  int err = mkdir(path, 0755);
+#endif
+  if (err < 0) {
+    lua_pushnil(L);
+    lua_pushstring(L, strerror(errno));
+    return 2;
+  }
+  lua_pushboolean(L, 1);
+  return 1;
+}
+
+
+static int f_rmdir(lua_State *L) {
+  const char *path = luaL_checkstring(L, 1);
+#ifdef _WIN32
+  int err = _rmdir(path);
+#else
+  int err = rmdir(path);
+#endif
+  if (err < 0) {
+    lua_pushnil(L);
+    lua_pushstring(L, strerror(errno));
+    return 2;
+  }
+  lua_pushboolean(L, 1);
   return 1;
 }
 
@@ -500,6 +550,8 @@ static const luaL_Reg lib[] = {
   { "list_dir",            f_list_dir            },
   { "absolute_path",       f_absolute_path       },
   { "get_file_info",       f_get_file_info       },
+  { "mkdir",               f_mkdir               },
+  { "rmdir",               f_rmdir               },
   { "get_clipboard",       f_get_clipboard       },
   { "set_clipboard",       f_set_clipboard       },
   { "get_display_scale",   f_get_display_scale   },

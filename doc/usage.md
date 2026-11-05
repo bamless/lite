@@ -135,10 +135,17 @@ Plugins can be downloaded from the [plugins repository](https://github.com/rxi/l
 
 ### Context Menus
 
-Right-clicking a view or a tab opens a context menu. Its items come from two
-places: the view that was clicked, and any items plugins registered for that
-kind of view. Plugins add items with `ContextMenu.add`, from the
-`core.contextmenu` module:
+Right-clicking a view or a tab opens a context menu. In the project tree, the
+menu has file operations: new file or folder (missing parent folders are
+created too), rename, delete, copy the absolute or project-relative path, and
+reveal in the system file manager. Deleting a folder removes everything inside
+it after a confirmation; symbolic links inside it are removed, never followed.
+Open docs follow a rename, and the tabs of deleted files are closed unless they
+have unsaved changes.
+
+The items come from two places: the view that was clicked, and any items
+plugins registered for that kind of view. Plugins add items with
+`ContextMenu.add`, from the `core.contextmenu` module:
 ```lua
 local ContextMenu = require "core.contextmenu"
 local DocView = require "core.docview"
