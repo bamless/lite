@@ -73,7 +73,8 @@ local function span_style(span, family, base_color)
   end
   local face = span.bold and (span.italic and "bold_italic" or "bold")
       or (span.italic and "italic" or "regular")
-  return style[family[face] or family.regular], color
+  local name = family[face] or (span.italic and family.italic) or family.regular
+  return style[name], color
 end
 
 
@@ -96,6 +97,53 @@ local function get_scaled_image(entry, w, h)
 end
 
 
+-- Splits `spans` into the units that line breaking works on. A line may only
+-- break at whitespace, so a word is a maximal stretch of non-space text, even
+-- when it crosses span boundaries (for example: `foo**bar**`, ``use `cmd`s``, md4c's
+-- `AT`, `&`, `T` for `AT&amp;T`, etc...).
+local function split_words(spans, family, base_color)
+  local words = {}
+
+  local current
+  local space_font
+  local newline = false
+
+  local function start_word(word)
+    word.space_font, word.newline = space_font, newline
+    space_font, newline = nil, false
+    table.insert(words, word)
+    return word
+  end
+
+  for _, span in ipairs(spans) do
+    local font, color = span_style(span, family, base_color)
+    if span.loaded then
+      start_word({ image = span })
+      current = nil
+    else
+      for space, text in span.text:gmatch("(%s*)(%S*)") do
+        if space ~= "" then
+          current = nil
+          if space:find("\n", 1, true) then
+            newline, space_font = true, nil
+          else
+            space_font = font
+          end
+        end
+        if text ~= "" then
+          current = current or start_word({ pieces = {}, w = 0 })
+          local w = font:get_width(text)
+          table.insert(current.pieces,
+            { span = span, font = font, color = color, text = text, w = w })
+          current.w = current.w + w
+        end
+      end
+    end
+  end
+  return words
+end
+
+
 -- Word-wraps `spans` into the column from `x` to `x + width`, appending runs to `items`.
 -- Returns the y below the last line.
 -- TODO: break words wider than the column, instead of letting them overflow.
@@ -103,7 +151,6 @@ end
 local function wrap_spans(spans, x, width, y, family, base_color, items, align)
   local line_runs = {}
   local cx = x
-  local pending_space
   local underline = math.max(1, common.round(style.scale))
 
   -- whether the next line starts after a hard break rather than a wrap
@@ -170,71 +217,63 @@ local function wrap_spans(spans, x, width, y, family, base_color, items, align)
     return y
   end
 
-  local function place_image(span)
-    local w, h = get_image_size(span.loaded, width)
-    local sw = (pending_space and #line_runs > 0) and pending_space.font:get_width(" ") or 0
+  local function place_piece(piece, sw)
+    local span = piece.span
+    local last = line_runs[#line_runs]
+    if last and last.font == piece.font and last.color == piece.color
+        and last.code == span.code and last.link == span.link and last.strike == span.strike
+        and (last.span == span or not (span.link or span.code)) then
+      last.text = last.text .. (sw > 0 and " " or "") .. piece.text
+      last.w = last.w + sw + piece.w
+    else
+      table.insert(line_runs, {
+        x = cx + sw,
+        w = piece.w,
+        font = piece.font,
+        color = piece.color,
+        text = piece.text,
+        code = span.code,
+        link = span.link,
+        strike = span.strike,
+        span = span,
+        space_before = sw > 0
+      })
+    end
+    cx = cx + sw + piece.w
+  end
+
+  for _, word in ipairs(split_words(spans, family, base_color)) do
+    if word.newline then
+      flush_line()
+      cx, hard = x, true
+    end
+
+    local w, h = word.w, nil
+    if word.image then w, h = get_image_size(word.image.loaded, width) end
+
+    local sw = (word.space_font and #line_runs > 0) and word.space_font:get_width(" ") or 0
     if cx + sw + w > x + width and #line_runs > 0 then
       flush_line()
       cx, sw = x, 0
     end
-    table.insert(line_runs, {
-      x = cx + sw,
-      w = w,
-      h = h,
-      link = span.link,
-      span = span,
-      image = get_scaled_image(span.loaded, w, h)
-    })
-    cx = cx + sw + w
-    pending_space = nil
-  end
 
-  for _, span in ipairs(spans) do
-    local font, color = span_style(span, family, base_color)
-    if span.loaded then
-      place_image(span)
-      goto next_span
-    end
-    for space, word in span.text:gmatch("(%s*)(%S*)") do
-      if space:find("\n", 1, true) then
-        flush_line()
-        cx, pending_space, hard = x, nil, true
-      elseif space ~= "" then
-        pending_space = { font = font, text = " " }
-      end
-      if word ~= "" then
-        local w = font:get_width(word)
-        local sw = (pending_space and #line_runs > 0)
-            and pending_space.font:get_width(" ") or 0
-        if cx + sw + w > x + width and #line_runs > 0 then
-          flush_line()
-          cx, sw = x, 0
-        end
-        local last = line_runs[#line_runs]
-        if last and last.font == font and last.color == color
-            and last.code == span.code and last.link == span.link and last.strike == span.strike
-            and (last.span == span or not (span.link or span.code)) then
-          last.text = last.text .. (sw > 0 and " " or "") .. word
-          last.w = last.w + sw + w
-        else
-          table.insert(line_runs, {
-            x = cx + sw,
-            w = w,
-            font = font,
-            color = color,
-            text = word,
-            code = span.code,
-            link = span.link,
-            strike = span.strike,
-            span = span,
-            space_before = sw > 0
-          })
-        end
-        cx = cx + sw + w
-        pending_space = nil
+    if word.image then
+      local span = word.image
+      table.insert(line_runs, {
+        x = cx + sw,
+        w = w,
+        h = h,
+        link = span.link,
+        span = span,
+        image = get_scaled_image(span.loaded, w, h)
+      })
+      cx = cx + sw + w
+    else
+      for _, piece in ipairs(word.pieces) do
+        place_piece(piece, sw)
+        sw = 0
       end
     end
-    ::next_span::
   end
 
   return flush_line()
@@ -279,19 +318,16 @@ local function measure_cell(spans, family)
     if item.text or item.image then natural = math.max(natural, item.x + item.w) end
   end
 
+  -- the narrowest the cell can get is its widest unbreakable word
   local min = 0
-  for _, span in ipairs(spans) do
-    if span.loaded then
+  for _, word in ipairs(split_words(spans, family, style.syntax["normal"])) do
+    if word.image then
       -- images shrink to fit, down to a small thumbnail
-      local w = get_image_size(span.loaded, math.huge)
+      local w = get_image_size(word.image.loaded, math.huge)
       min = math.max(min, math.min(w, common.round(48 * style.scale)))
-      goto next_span
+    else
+      min = math.max(min, word.w)
     end
-    local span_font = span_style(span, family, style.syntax["normal"])
-    for word in span.text:gmatch("%S+") do
-      min = math.max(min, span_font:get_width(word))
-    end
-    ::next_span::
   end
   return natural, math.min(min, natural)
 end
@@ -918,31 +954,40 @@ end
 
 function MarkdownView:select_from_mouse(pos)
   local runs = self:get_layout().runs
-  local press = self.press
-  local first, last = press.pos, pos
+  local press = assert(self.press, "selecting without a mouse press")
+  local first, last = assert(press.pos, "mouse press without a position"), pos
+
   local swap = is_before(last, first)
   if swap then first, last = last, first end
+
+  local first_index, last_index = first.index, last.index
+  local first_run = assert(runs[first_index], "selection outside the layout")
+  local last_run = assert(runs[last_index], "selection outside the layout")
+
   local s, e = first.offset, last.offset
 
   if press.clicks == 2 then
-    local text = runs[first.index].text
+    local text = first_run.text
     while s > 0 and is_word_char(text:sub(s, s)) do s = s - 1 end
-    text = runs[last.index].text
+    text = last_run.text
     while e < #text and is_word_char(text:sub(e + 1, e + 1)) do e = e + 1 end
   elseif press.clicks == 3 then
-    local block = runs[first.index].line.block
-    while runs[first.index - 1] and runs[first.index - 1].line.block == block do
-      first = { index = first.index - 1 }
+    local block = first_run.line.block
+    local prev = runs[first_index - 1]
+    while prev and prev.line.block == block do
+      first_index, prev = first_index - 1, runs[first_index - 2]
     end
-    block = runs[last.index].line.block
-    while runs[last.index + 1] and runs[last.index + 1].line.block == block do
-      last = { index = last.index + 1 }
+    block = last_run.line.block
+    local next_run = runs[last_index + 1]
+    while next_run and next_run.line.block == block do
+      last_index, last_run = last_index + 1, next_run
+      next_run = runs[last_index + 1]
     end
-    s, e = 0, #runs[last.index].text
+    s, e = 0, #last_run.text
   end
 
-  first = { index = first.index, offset = s }
-  last = { index = last.index, offset = e }
+  first = { index = first_index, offset = s }
+  last = { index = last_index, offset = e }
   if swap then first, last = last, first end
   self.selection = { anchor = first, focus = last }
 end
@@ -971,7 +1016,6 @@ end
 function MarkdownView:get_selected_text()
   local first, last = self:get_selection()
   if not first or not last then return end
-  if not first then return nil end
   local runs = self:get_layout().runs
   local parts = {}
   for i = first.index, last.index do
@@ -1043,7 +1087,7 @@ function MarkdownView:load_image(target)
   local path = resolve_path(self.doc, target)
   if not path then return end
 
-  local info = path and system.get_file_info(path)
+  local info = system.get_file_info(path)
   if not info or info.type ~= "file" then return nil end
 
   local entry = self.images[path]
@@ -1142,6 +1186,9 @@ end
 
 function MarkdownView:on_mouse_moved(x, y, ...)
   MarkdownView.super.on_mouse_moved(self, x, y, ...)
+
+  -- Bring the layou up to date first if needed.
+  self:get_layout()
 
   local press = self.press
   if press and math.abs(x - press.x) + math.abs(y - press.y) > 4 * style.scale then
