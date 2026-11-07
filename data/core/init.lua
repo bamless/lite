@@ -22,8 +22,13 @@ local function update_refresh_rate()
   config.fps, detected_fps = fps, fps
 end
 
-local function update_scale()
+local function get_scale()
   local scale = scale_override or system.get_display_scale()
+  return scale and scale * config.scale
+end
+
+local function update_scale()
+  local scale = get_scale()
   if not scale or scale == style.scale then return end
 
   local old = style.scale
@@ -35,7 +40,7 @@ local function update_scale()
     view:on_scale_change(scale, old)
   end
 
-  core.log_quiet("Display scale is now %g", scale)
+  core.log_quiet("Scale is now %g", scale)
   core.request_redraw()
 end
 
@@ -159,7 +164,8 @@ function core.init()
   local got_user_error = not core.try(require, "user")
   local got_project_error = not core.load_project_module()
 
-  style.set_scale(style.scale)
+  -- the user module may have changed `config.scale` or the font sizes
+  style.set_scale(get_scale() or style.scale)
 
   for _, filename in ipairs(files) do
     core.root_view:open_doc(core.open_doc(filename))

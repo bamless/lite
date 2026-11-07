@@ -67,7 +67,7 @@ style.syntax["function"] = { common.color "#93DDFA" }
 local derived = {}
 
 local derived_from = {
-  scale = "the display scale (or the LITE_SCALE environment variable)",
+  scale = "config.scale",
   font = "style.fonts.font",
   big_font = "style.fonts.big_font",
   icon_font = "style.fonts.icon_font",

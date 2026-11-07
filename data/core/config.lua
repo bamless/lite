@@ -5,6 +5,7 @@ config.fps = system.get_refresh_rate() or 60
 config.blink_timeout = 10
 config.max_log_items = 80
 config.message_timeout = 3
+config.scale = 1
 config.mouse_wheel_scroll = 50
 config.scroll_duration = 0.1 -- seconds a scroll takes to reach its target
 config.file_size_limit = 10

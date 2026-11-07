@@ -45,6 +45,16 @@ have been loaded.
 The user module can be modified by running the `core:open-user-module` command
 or otherwise directly opening the `data/user/init.lua` file.
 
+### Scale
+lite sizes its fonts and UI from the display's scale, or from the `LITE_SCALE`
+environment variable when it is set. To make everything larger or smaller than
+that, set `config.scale` in the user module. It multiplies the display scale,
+so lite still adjusts when its window moves to a different monitor:
+
+```lua
+config.scale = 1.25
+```
+
 
 ## Project Module
 The project module is an optional module which is loaded from the current

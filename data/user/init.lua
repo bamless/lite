@@ -8,6 +8,9 @@ local style = require "core.style"
 -- light theme:
 -- require "user.colors.summer"
 
+-- make everything 25% larger than the display's scale:
+-- config.scale = 1.25
+
 -- key binding:
 -- keymap.add { ["ctrl+escape"] = "core:quit" }
 
