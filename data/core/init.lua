@@ -139,6 +139,7 @@ function core.init()
   system.chdir(project_dir)
 
   core.frame_start = 0
+  core.frame_dt = 1 / config.fps
   core.clip_rect_stack = {{ 0,0,0,0 }}
   core.log_items = {}
   core.docs = {}
@@ -561,8 +562,17 @@ end)
 
 
 function core.run()
+  local idled = true
   while true do
-    core.frame_start = system.get_time()
+    local now = system.get_time()
+    if idled then
+      core.frame_dt = 1 / config.fps
+    else
+      core.frame_dt = math.min(now - core.frame_start, 0.1)
+    end
+    core.frame_start = now
+    idled = false
+
     local did_redraw = core.step()
     run_threads()
 
@@ -587,6 +597,7 @@ function core.run()
       local timeout = deadline - system.get_time()
       if timeout > 0 then
         system.wait_event(timeout)
+        idled = true
       end
     end
     local elapsed = system.get_time() - core.frame_start

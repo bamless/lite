@@ -12,6 +12,7 @@ function View:new()
   self.position = { x = 0, y = 0 }
   self.size = { x = 0, y = 0 }
   self.scroll = { x = 0, y = 0, to = { x = 0, y = 0 } }
+  self.easings = setmetatable({}, { __mode = "k" })
   self.scrollbars = {
     v = { size = style.scrollbar_size, hovered = false, dragging = false },
     h = { size = style.scrollbar_size, hovered = false, dragging = false },
@@ -44,11 +45,47 @@ function View:move_towards(t, k, dest, rate)
   if math.abs(val - dest) < 0.5 then
     t[k] = dest
   else
-    t[k] = common.lerp(val, dest, rate or 0.5)
+    -- framerate indipendent lerp
+    local remaining = (1 - (rate or 0.5)) ^ (core.frame_dt * 60)
+    t[k] = common.lerp(val, dest, 1 - remaining)
   end
   if val ~= dest then
     core.request_redraw()
   end
+end
+
+
+-- Animates `t[k]` to `dest` over `duration` seconds. `ease` is a custom easing function
+-- for customizing the interpolation, or `common.ease_out_cubic` if not specified.
+function View:ease_towards(t, k, dest, duration, ease)
+  if type(t) ~= "table" then
+    return self:ease_towards(self, t, k, dest, duration)
+  end
+  local fields = self.easings[t]
+  if not fields then
+    fields = {}
+    self.easings[t] = fields
+  end
+  local anim = fields[k]
+
+  local val = t[k]
+  if not anim or anim.to ~= dest then
+    anim = { from = val, to = dest, elapsed = 0 }
+    fields[k] = anim
+  end
+  if val == dest then return end
+
+  -- `frame_dt` instead of the wall clock, so that waking from idle counts
+  -- as one frame rather than finishing the animation at once
+  anim.elapsed = anim.elapsed + core.frame_dt
+  local p = anim.elapsed / duration
+  if p >= 1 then
+    t[k] = dest -- snap to end
+  else
+    ease = ease or common.ease_out_cubic
+    t[k] = common.lerp(anim.from, anim.to, ease(p))
+  end
+  core.request_redraw()
 end
 
 
@@ -198,8 +235,8 @@ end
 
 function View:update()
   self:clamp_scroll_position()
-  self:move_towards(self.scroll, "x", self.scroll.to.x, 0.3)
-  self:move_towards(self.scroll, "y", self.scroll.to.y, 0.3)
+  self:ease_towards(self.scroll, "x", self.scroll.to.x, config.scroll_duration)
+  self:ease_towards(self.scroll, "y", self.scroll.to.y, config.scroll_duration)
 
   for _, bar in pairs(self.scrollbars) do
     local dest = (bar.hovered or bar.dragging)

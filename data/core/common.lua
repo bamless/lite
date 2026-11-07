@@ -34,6 +34,11 @@ function common.lerp(a, b, t)
 end
 
 
+function common.ease_out_cubic(p)
+  return 1 - (1 - p) ^ 3
+end
+
+
 function common.color(str)
   local r, g, b, a = str:match("#(%x%x)(%x%x)(%x%x)")
   if r then
