@@ -563,6 +563,7 @@ end)
 
 function core.run()
   local idled = true
+  local next_frame = 0
   while true do
     local now = system.get_time()
     if idled then
@@ -600,8 +601,16 @@ function core.run()
         idled = true
       end
     end
+
+    local frame = 1 / config.fps
+    next_frame = next_frame + frame
+    if next_frame < core.frame_start then
+      next_frame = core.frame_start + frame
+    end
     local elapsed = system.get_time() - core.frame_start
-    system.sleep(math.max(0, 1 / config.fps - elapsed))
+    if not (did_redraw and renderer.has_vsync() and elapsed >= frame / 2) then
+      system.sleep(next_frame - system.get_time())
+    end
   end
 end
 

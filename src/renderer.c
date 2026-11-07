@@ -33,6 +33,42 @@ struct RenFont {
 static SDL_Window *window;
 static struct { int left, top, right, bottom; } clip;
 
+static SDL_Renderer *renderer;
+static SDL_Texture *texture;
+static bool has_vsync;
+static struct { RenColor *pixels; int w, h; } framebuffer;
+
+
+static void* check_alloc(void *ptr);
+
+
+static void update_framebuffer_size(void) {
+  int w, h;
+#if __APPLE__
+  SDL_GetWindowSize(window, &w, &h);
+#else
+  SDL_GetRendererOutputSize(renderer, &w, &h);
+#endif
+  if (w < 1) { w = 1; }
+  if (h < 1) { h = 1; }
+  if (texture && w == framebuffer.w && h == framebuffer.h) { return; }
+
+  free(framebuffer.pixels);
+  framebuffer.pixels = check_alloc(calloc((size_t) w * h, sizeof(RenColor)));
+  framebuffer.w = w;
+  framebuffer.h = h;
+
+  /* `RenColor` is laid out b, g, r, a, which on a little-endian machine is
+  ** the 32-bit `ARGB8888`, so pixels can be uploaded without conversion */
+  if (texture) { SDL_DestroyTexture(texture); }
+  texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888,
+    SDL_TEXTUREACCESS_STREAMING, w, h);
+  if (!texture) {
+    fprintf(stderr, "Fatal error: could not create the window texture: %s\n", SDL_GetError());
+    exit(EXIT_FAILURE);
+  }
+}
+
 
 static void* check_alloc(void *ptr) {
   if (!ptr) {
@@ -77,18 +113,53 @@ static const char* utf8_to_codepoint(const char* p, unsigned* dst) {
 void ren_init(SDL_Window *win) {
   assert(win);
   window = win;
-  SDL_Surface *surf = SDL_GetWindowSurface(window);
-  ren_set_clip_rect( (RenRect) { 0, 0, surf->w, surf->h } );
+
+  SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "nearest");
+
+  /* Prefer a vsynced renderer. If that fails we take any renderer at all, and
+  ** the main loop falls back to pacing itself with `system.sleep`. */
+  renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_PRESENTVSYNC);
+  if (!renderer) { renderer = SDL_CreateRenderer(window, -1, 0); }
+  if (!renderer) {
+    fprintf(stderr, "Fatal error: could not create a renderer: %s\n",
+      SDL_GetError());
+    exit(EXIT_FAILURE);
+  }
+  SDL_RendererInfo info;
+  has_vsync = SDL_GetRendererInfo(renderer, &info) == 0 && (info.flags & SDL_RENDERER_PRESENTVSYNC);
+
+  update_framebuffer_size();
+  ren_set_clip_rect( (RenRect) { 0, 0, framebuffer.w, framebuffer.h } );
+}
+
+
+bool ren_has_vsync(void) {
+  return has_vsync;
+}
+
+
+void ren_present(void) {
+  SDL_RenderClear(renderer);
+  SDL_RenderCopy(renderer, texture, NULL, NULL);
+  SDL_RenderPresent(renderer);
 }
 
 
 void ren_update_rects(RenRect *rects, int count) {
-  SDL_UpdateWindowSurfaceRects(window, (SDL_Rect*) rects, count);
+  for (int i = 0; i < count; i++) {
+    RenRect r = rects[i];
+    SDL_UpdateTexture(texture, (SDL_Rect*) &r,
+      framebuffer.pixels + r.x + r.y * framebuffer.w,
+      framebuffer.w * sizeof(RenColor));
+  }
+
   static bool initial_frame = true;
   if (initial_frame) {
     SDL_ShowWindow(window);
     initial_frame = false;
   }
+
+  ren_present();
 }
 
 
@@ -101,9 +172,9 @@ void ren_set_clip_rect(RenRect rect) {
 
 
 void ren_get_size(int *x, int *y) {
-  SDL_Surface *surf = SDL_GetWindowSurface(window);
-  *x = surf->w;
-  *y = surf->h;
+  update_framebuffer_size();
+  *x = framebuffer.w;
+  *y = framebuffer.h;
 }
 
 
@@ -394,10 +465,9 @@ void ren_draw_rect(RenRect rect, RenColor color) {
   x2 = x2 > clip.right  ? clip.right  : x2;
   y2 = y2 > clip.bottom ? clip.bottom : y2;
 
-  SDL_Surface *surf = SDL_GetWindowSurface(window);
-  RenColor *d = (RenColor*) surf->pixels;
-  d += x1 + y1 * surf->w;
-  int dr = surf->w - (x2 - x1);
+  RenColor *d = framebuffer.pixels;
+  d += x1 + y1 * framebuffer.w;
+  int dr = framebuffer.w - (x2 - x1);
 
   if (color.a == 0xff) {
     rect_draw_loop(color);
@@ -422,9 +492,8 @@ void ren_blit_image(RenImage *image, int x, int y) {
   RenRect sub = { 0, 0, image->width, image->height };
   if (!clip_image(&sub, &x, &y)) { return; }
 
-  SDL_Surface *surf = SDL_GetWindowSurface(window);
   RenColor *s = image->pixels + sub.x + sub.y * image->width;
-  RenColor *d = (RenColor*) surf->pixels + x + y * surf->w;
+  RenColor *d = framebuffer.pixels + x + y * framebuffer.w;
   for (int j = 0; j < sub.height; j++) {
     for (int i = 0; i < sub.width; i++) {
       if (s[i].a == 0xff) {
@@ -434,7 +503,7 @@ void ren_blit_image(RenImage *image, int x, int y) {
       }
     }
     s += image->width;
-    d += surf->w;
+    d += framebuffer.w;
   }
 }
 
@@ -444,13 +513,12 @@ void ren_draw_image(RenImage *image, RenRect *sub, int x, int y, RenColor color)
   if (!clip_image(sub, &x, &y)) { return; }
 
   /* draw */
-  SDL_Surface *surf = SDL_GetWindowSurface(window);
   RenColor *s = image->pixels;
-  RenColor *d = (RenColor*) surf->pixels;
+  RenColor *d = framebuffer.pixels;
   s += sub->x + sub->y * image->width;
-  d += x + y * surf->w;
+  d += x + y * framebuffer.w;
   int sr = image->width - sub->width;
-  int dr = surf->w - sub->width;
+  int dr = framebuffer.w - sub->width;
 
   for (int j = 0; j < sub->height; j++) {
     for (int i = 0; i < sub->width; i++) {

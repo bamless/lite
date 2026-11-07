@@ -2,6 +2,7 @@
 #define RENDERER_H
 
 #include <SDL2/SDL.h>
+#include <stdbool.h>
 #include <stdint.h>
 
 typedef struct RenImage RenImage;
@@ -13,6 +14,8 @@ typedef struct { int x, y, width, height; } RenRect;
 
 void ren_init(SDL_Window *win);
 void ren_update_rects(RenRect *rects, int count);
+void ren_present(void);
+bool ren_has_vsync(void);
 void ren_set_clip_rect(RenRect rect);
 void ren_get_size(int *x, int *y);
 

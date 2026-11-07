@@ -375,10 +375,8 @@ void rencache_end_frame(void) {
     }
   }
 
-  /* update dirty rects */
-  if (rect_count > 0) {
-    ren_update_rects(rect_buf, rect_count);
-  }
+  /* Upload the dirty rects and present. */
+  ren_update_rects(rect_buf, rect_count);
 
   /* free fonts */
   if (has_free_commands) {

@@ -11,10 +11,13 @@
 #include <string.h>
 #include <sys/stat.h>
 #include "api.h"
+#include "renderer.h"
 
 #ifdef _WIN32
   #include <windows.h>
   #include <direct.h>
+#else
+  #include <time.h>
 #endif
 
 extern SDL_Window *window;
@@ -63,7 +66,7 @@ top:
         lua_pushnumber(L, e.window.data2);
         return 3;
       } else if (e.window.event == SDL_WINDOWEVENT_EXPOSED) {
-        SDL_UpdateWindowSurface(window);
+        ren_present();
         lua_pushstring(L, "exposed");
         return 1;
       }
@@ -488,7 +491,18 @@ static int f_get_time(lua_State *L) {
 
 static int f_sleep(lua_State *L) {
   double n = luaL_checknumber(L, 1);
-  SDL_Delay(n * 1000);
+  if (!(n > 0)) { return 0; }
+#if _WIN32
+  /* TODO: `Sleep` only has millisecond resolution (with the 1ms timer
+  ** period SDL requests). An high-resolution waitable timer would do better.
+  ** Until then, round instead of truncating, so the error averages out. */
+  SDL_Delay((Uint32) (n * 1000 + 0.5));
+#else
+  struct timespec ts;
+  ts.tv_sec = (time_t) n;
+  ts.tv_nsec = (long) ((n - ts.tv_sec) * 1e9);
+  while (nanosleep(&ts, &ts) == -1 && errno == EINTR) {}
+#endif
   return 0;
 }
 

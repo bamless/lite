@@ -37,6 +37,12 @@ static int f_get_size(lua_State *L) {
 }
 
 
+static int f_has_vsync(lua_State *L) {
+  lua_pushboolean(L, ren_has_vsync());
+  return 1;
+}
+
+
 static int f_begin_frame(lua_State *L) {
   rencache_begin_frame();
   return 0;
@@ -96,6 +102,7 @@ static int f_draw_image(lua_State *L) {
 static const luaL_Reg lib[] = {
   { "show_debug",    f_show_debug    },
   { "get_size",      f_get_size      },
+  { "has_vsync",     f_has_vsync     },
   { "begin_frame",   f_begin_frame   },
   { "end_frame",     f_end_frame     },
   { "set_clip_rect", f_set_clip_rect },
