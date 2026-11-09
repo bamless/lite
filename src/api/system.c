@@ -12,6 +12,7 @@
 #include <sys/stat.h>
 #include "api.h"
 #include "renderer.h"
+#include "net.h"
 
 #ifdef _WIN32
   #include <windows.h>
@@ -52,6 +53,12 @@ static int f_poll_event(lua_State *L) {
 top:
   if (!SDL_PollEvent(&e)) {
     return 0;
+  }
+
+  if (e.type == net_event_type) {
+    lua_pushstring(L, "net");
+    lua_pushinteger(L, e.user.code);
+    return 2;
   }
 
   switch (e.type) {

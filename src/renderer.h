@@ -21,6 +21,7 @@ void ren_get_size(int *x, int *y);
 
 RenImage* ren_new_image(int width, int height);
 RenImage* ren_load_image(const char *filename, const char **error);
+RenImage* ren_load_image_bytes(const void* bytes, size_t len, const char **error);
 RenImage* ren_resize_image(RenImage *image, int width, int height);
 void ren_get_image_size(RenImage *image, int *width, int *height);
 unsigned ren_get_image_id(RenImage *image);

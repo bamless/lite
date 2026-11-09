@@ -32,7 +32,7 @@ else
     march="-march=native"
   fi
   luajit_flags=()
-  lflags="$lflags -ldl -o $outfile"
+  lflags="$lflags -ldl -lcurl -o $outfile" # TODO: make libcurl linking cross-platform.
 fi
 
 cflags="$cflags $march -flto"

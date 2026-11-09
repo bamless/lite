@@ -10,38 +10,44 @@ function Highlighter:new(doc)
   self.doc = doc
   self:reset()
 
-  -- init incremental syntax highlighting
+  -- init incremental syntax highlighting.
+  local weak_self = setmetatable({ self }, { __mode = "v" })
   core.add_thread(function()
-    while true do
-      if self.first_invalid_line > self.max_wanted_line then
-        -- Nothing to do. New work only comes from edits and from drawing,
-        -- both of which happen while the main loop is awake, so check again
-        -- on its next pass without keeping an idle loop awake.
-        self.max_wanted_line = 0
-        coroutine.yield(core.WHEN_AWAKE)
-
-      else
-        local max = math.min(self.first_invalid_line + 40, self.max_wanted_line)
-
-        -- A cached line is stale if its starting state or its text changed.
-        -- The text check matters for edits made by another thread (e.g.
-        -- autoreload): one that runs after a draw but before this thread in
-        -- the same pass leaves edited lines that no `get_line()` has
-        -- re-tokenized yet.
-        for i = self.first_invalid_line, max do
-          local state = (i > 1) and self.lines[i - 1].state
-          local line = self.lines[i]
-          if not (line and line.init_state == state and line.text == self.doc.lines[i]) then
-            self.lines[i] = self:tokenize_line(i, state)
-          end
-        end
-
-        self.first_invalid_line = max + 1
-        core.request_redraw()
-        coroutine.yield()
-      end
+    while weak_self[1] do
+      coroutine.yield(weak_self[1]:step())
     end
   end, self)
+end
+
+
+-- Returns what the highlighter thread should yield.
+function Highlighter:step()
+  if self.first_invalid_line > self.max_wanted_line then
+    -- Nothing to do. New work only comes from edits and from drawing,
+    -- both of which happen while the main loop is awake, so check again
+    -- on its next pass without keeping an idle loop awake.
+    self.max_wanted_line = 0
+    return core.WHEN_AWAKE
+  end
+
+  local max = math.min(self.first_invalid_line + 40, self.max_wanted_line)
+
+  -- A cached line is stale if its starting state or its text changed.
+  -- The text check matters for edits made by another thread (e.g.
+  -- autoreload): one that runs after a draw but before this thread in
+  -- the same pass leaves edited lines that no `get_line()` has
+  -- re-tokenized yet.
+  for i = self.first_invalid_line, max do
+    local state = (i > 1) and self.lines[i - 1].state
+    local line = self.lines[i]
+    if not (line and line.init_state == state and line.text == self.doc.lines[i]) then
+      self.lines[i] = self:tokenize_line(i, state)
+    end
+  end
+
+  self.first_invalid_line = max + 1
+  core.request_redraw()
+  return nil
 end
 
 
