@@ -3,6 +3,7 @@ local common = require "core.common"
 local command = require "core.command"
 local config = require "core.config"
 local keymap = require "core.keymap"
+local net = require "core.net"
 local style = require "core.style"
 local syntax = require "core.syntax"
 local tokenizer = require "core.tokenizer"
@@ -10,6 +11,8 @@ local View = require "core.view"
 local DocView = require "core.docview"
 local CommandView = require "core.commandview"
 local Tooltip = require "core.tooltip"
+
+local images_client = net.client()
 
 local font_files = {
   regular = EXEDIR .. "/data/fonts/font.ttf",
@@ -78,9 +81,11 @@ local function span_style(span, family, base_color)
 end
 
 
+-- Images follow `style.scale` but are never enlarged past their natural size.
 local function get_image_size(entry, max_width)
-  local w = math.max(1, common.round(entry.width * style.scale))
-  local h = math.max(1, common.round(entry.height * style.scale))
+  local scale = math.min(style.scale, 1)
+  local w = math.max(1, common.round(entry.width * scale))
+  local h = math.max(1, common.round(entry.height * scale))
   if w > max_width then
     w, h = math.max(1, math.floor(max_width)), math.max(1, math.floor(h * max_width / w))
   end
@@ -785,6 +790,13 @@ end
 -- View
 -- -----------------------------------------------------------------------------
 
+
+local function is_link(item) return item.link end
+local function is_image(item) return item.image end
+local function is_hoverable(item) return item.link or item.image end
+local function get_tooltip_text(item) return item.image and item.span.image or item.link end
+
+
 local MarkdownView = View:extend()
 
 
@@ -874,11 +886,11 @@ function MarkdownView:draw()
 
   self:draw_scrollbar()
 
-  local link = self.hovered_link
-  if link then
+  local hovered = self.hovered
+  if hovered then
     local gap = math.floor(style.padding.y / 2)
-    self.tooltip:draw(link.link, ox + link.x, oy + link.y + link.h + gap,
-      oy + link.y - gap)
+    self.tooltip:draw(get_tooltip_text(hovered), ox + hovered.x,
+      oy + hovered.y + hovered.h + gap, oy + hovered.y - gap)
   end
 end
 
@@ -1077,13 +1089,15 @@ local function open_relative(doc, target)
 end
 
 
--- TODO: notice changed image files, like `autoreload` does for docs.
+-- TODO: notice changed local image files, like `autoreload` does for docs.
 function MarkdownView:load_image(target)
-  if target:match("^%a[%w+.-]*:") then
-    -- TODO: fetch http(s) images off the main thread (coroutine) with a cache
-    return nil
+  if target:match("^https?://") then
+    return self:load_remote_image(target)
+  elseif target:match("^%a[%w+.-]*:") then
+    return nil -- not supported protocol.
   end
 
+  -- resolve local image.
   local path = resolve_path(self.doc, target)
   if not path then return end
 
@@ -1098,6 +1112,7 @@ function MarkdownView:load_image(target)
     if image then width, height = image:get_size() end
     entry = {
       image = image,
+      path = path,  -- what "Save Image As" copies
       width = width,
       height = height,
       modified = info.modified,
@@ -1108,6 +1123,46 @@ function MarkdownView:load_image(target)
   end
   entry.used = true
   return entry.image and entry
+end
+
+function MarkdownView:load_remote_image(url)
+  -- TODO: should probably cache already downloaded remote images on disk.
+  local entry = self.images[url]
+  if entry then
+    entry.used = true
+    return entry.image and entry
+  end
+
+  entry = { used = true, sizes = {}, previous_sizes = {}, width = 0, height = 0 }
+  self.images[url] = entry
+
+  core.add_thread(function()
+    local res, err = images_client:request{
+      url = url,
+      headers = { Accept = "image/*" },
+      max_size = 10 * 1024 * 1024,
+    }
+    if not res then
+      return core.log_quiet("Can't fetch image %s: %s", url, err)
+    elseif res.status ~= 200 then
+      return core.log_quiet("Can't fetch image %s: HTTP %d", url, res.status)
+    end
+
+    -- The doc stopped referencing the image while it downloaded.
+    if self.images[url] ~= entry then return end
+
+    local image, load_err = renderer.image.load_bytes(res.body)
+    if not image then
+      return core.log_quiet("Can't decode image %s: %s", url, load_err)
+    end
+    entry.image = image
+    entry.width, entry.height = image:get_size()
+    entry.bytes = res.body
+    self.cache = nil
+
+    core.request_redraw()
+  end)
+  return nil
 end
 
 function MarkdownView:open_link(url)
@@ -1121,7 +1176,7 @@ function MarkdownView:open_link(url)
   end
 end
 
-function MarkdownView:get_link_at(x, y)
+function MarkdownView:get_item_at(x, y, accept)
   local pos, size = self.position, self.size
   if x < pos.x or y < pos.y or x >= pos.x + size.x or y >= pos.y + size.y then
     return nil
@@ -1129,11 +1184,65 @@ function MarkdownView:get_link_at(x, y)
   local ox, oy = self:get_content_offset()
   x, y = x - ox, y - oy
   for _, item in ipairs(self:get_layout().items) do
-    if item.link and x >= item.x and x < item.x + item.w
+    if accept(item) and x >= item.x and x < item.x + item.w
         and y >= item.y and y < item.y + item.h then
-      return item.link, item
+      return item
     end
   end
+end
+
+function MarkdownView:get_link_at(x, y)
+  local item = self:get_item_at(x, y, is_link)
+  if item then return item.link, item end
+end
+
+function MarkdownView:get_image_at(x, y)
+  return self:get_item_at(x, y, is_image)
+end
+
+local function image_file_name(src)
+  local name = src:gsub("[#?].*$", ""):match("([^/\\]+)$")
+  if not name then return "image" end
+  name = name:gsub("%%(%x%x)", function(hex) return string.char(tonumber(hex, 16)) end)
+  return (name:gsub("[/\\]", "_"))
+end
+
+local function read_file(path)
+  local fp, err = io.open(path, "rb")
+  if not fp then return nil, err end
+  local data = fp:read("*a")
+  fp:close()
+  return data
+end
+
+function MarkdownView:save_image(entry, filename)
+  local data, err = entry.bytes, nil
+  if not data then data, err = read_file(entry.path) end
+  if not data then
+    core.error("Can't read image: %s", err)
+    return
+  end
+  if system.get_file_info(filename)
+      and not system.show_confirm_dialog("Save Image",
+        string.format("\"%s\" already exists. Overwrite it?", filename)) then
+    return
+  end
+  local fp, open_err = io.open(filename, "wb")
+  if not fp then
+    core.error("Can't save image: %s", open_err)
+    return
+  end
+  fp:write(data)
+  fp:close()
+  core.log("Saved image to \"%s\"", filename)
+end
+
+function MarkdownView:prompt_save_image(item)
+  local entry = item.span.loaded
+  core.command_view:set_text(image_file_name(item.span.image))
+  core.command_view:enter("Save Image As", function(filename)
+    self:save_image(entry, filename)
+  end, common.path_suggest)
 end
 
 function MarkdownView:update()
@@ -1142,18 +1251,17 @@ function MarkdownView:update()
   local root = core.root_view
   local mouse = root.mouse
   local node = root.root_node:get_child_overlapping_point(mouse.x, mouse.y)
-  local link
+  local hovered
   if node and node.active_view == self and not root.context_menu.visible
       and not self:pointer_on_scrollbar() then
-    link = select(2, self:get_link_at(mouse.x, mouse.y))
+    hovered = self:get_item_at(mouse.x, mouse.y, is_hoverable)
   end
-  if link ~= self.hovered_link then
-    self.hovered_link = link
+  if hovered ~= self.hovered then
+    self.hovered = hovered
     core.request_redraw()
   end
-  -- a wrapped link is several runs of the same span; moving between them
-  -- shouldn't restart the delay
-  self.tooltip:set_target(link and link.span)
+
+  self.tooltip:set_target(hovered and hovered.span)
   self.tooltip:update()
 end
 
@@ -1231,6 +1339,12 @@ function MarkdownView:get_context_menu(x, y)
     table.insert(items, { divider = true })
     table.insert(items, { text = "Open Link", fn = function() self:open_link(link) end })
     table.insert(items, { text = "Copy Link Address", fn = function() system.set_clipboard(link) end })
+  end
+  local image = self:get_image_at(x, y)
+  if image then
+    table.insert(items, { divider = true })
+    table.insert(items, { text = "Save Image As...", fn = function() self:prompt_save_image(image) end })
+    table.insert(items, { text = "Copy Image Address", fn = function() system.set_clipboard(image.span.image) end })
   end
   table.insert(items, { divider = true })
   table.insert(items, { command = "markdown:toggle-preview", text = "Edit Source" })

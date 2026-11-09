@@ -279,6 +279,8 @@ function core.add_thread(f, weak_ref)
   core.threads[key] = { cr = coroutine.create(fn), wake = 0 }
 end
 
+-- The currently running thread, if any
+local current_thread = nil
 
 -- Besides `coroutine.yield()` (run again next pass) and
 -- `coroutine.yield(seconds)` (run again after a delay), a thread has two ways
@@ -295,6 +297,24 @@ end
 --   Suits a thread whose work is announced explicitly.
 core.WHEN_AWAKE = {}
 
+-- Returns the currently running thread, if any
+function core.current_thread()
+  local thread = current_thread
+  if thread and coroutine.running() == thread.cr then
+    return thread
+  else
+    return nil
+  end
+end
+
+
+-- Wakes a parked thread via its handle.
+function core.wake(thread_handle)
+  if thread_handle.wake == math.huge then
+    thread_handle.wake = 0
+  end
+end
+
 
 -- Wakes a parked thread. Pass the key the thread was added under: a numeric
 -- key is not stable, as it shifts when earlier threads finish. Threads in a
@@ -302,8 +322,8 @@ core.WHEN_AWAKE = {}
 -- delay such as a debounce.
 function core.wake_thread(key)
   local thread = core.threads[key]
-  if thread and thread.wake == math.huge then
-    thread.wake = 0
+  if thread then
+    core.wake(thread)
   end
 end
 
@@ -472,6 +492,16 @@ function core.step()
   local mouse = { x = 0, y = 0, dx = 0, dy = 0 }
 
   for type, a,b,c,d in system.poll_event do
+    if type == "net" then
+      local net = package.loaded["core.net"]
+      if net then
+        core.try(net.on_event, a)
+      else
+        core.error("Net event for client %d, but core.net is not loaded", a)
+      end
+      goto continue
+    end
+
     if type == "mousemoved" then
       mouse_moved = true
       mouse.x, mouse.y = a, b
@@ -482,8 +512,12 @@ function core.step()
       local _, res = core.try(core.on_event, type, a, b, c, d)
       did_keymap = res or did_keymap
     end
+
     core.request_redraw()
+
+    ::continue::
   end
+
   if mouse_moved then
     core.try(core.on_event, "mousemoved", mouse.x, mouse.y, mouse.dx, mouse.dy)
   end
@@ -536,7 +570,11 @@ local run_threads = coroutine.wrap(function()
     for k, thread in pairs(core.threads) do
       -- run thread
       if thread.wake < system.get_time() then
+
+        current_thread = thread
         local _, wait = assert(coroutine.resume(thread.cr))
+        current_thread = nil
+
         thread.when_awake = (wait == core.WHEN_AWAKE)
         if coroutine.status(thread.cr) == "dead" then
           if type(k) == "number" then

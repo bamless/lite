@@ -207,6 +207,22 @@ RenImage* ren_load_image(const char *filename, const char **error) {
   return image;
 }
 
+RenImage* ren_load_image_bytes(const void* bytes, size_t len, const char** error) {
+  int width, height, channels;
+  unsigned char *data = stbi_load_from_memory(bytes, len, &width, &height, &channels, 4);
+  if (!data) {
+    *error = stbi_failure_reason();
+    return NULL;
+  }
+  RenImage *image = ren_new_image(width, height);
+  for (int i = 0; i < width * height; i++) {
+    unsigned char *p = data + i * 4;
+    image->pixels[i] = (RenColor) { .r = p[0], .g = p[1], .b = p[2], .a = p[3] };
+  }
+  stbi_image_free(data);
+  return image;
+}
+
 
 RenImage* ren_resize_image(RenImage *src, int width, int height) {
   RenImage *dst = ren_new_image(width, height);

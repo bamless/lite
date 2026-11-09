@@ -2,11 +2,18 @@
 #include "renderer.h"
 #include "rencache.h"
 
+#include <limits.h>
+
 
 static RenImage** push_image(lua_State *L, RenImage *image) {
   RenImage **self = lua_newuserdata(L, sizeof(*self));
   *self = image;
   luaL_setmetatable(L, API_TYPE_IMAGE);
+  int width, height;
+  ren_get_image_size(image, &width, &height);
+  /* The GC only sees the pointer-sized userdata, not the image pixels, so
+  ** without this hint unused images pile up for megabytes between cycles. */
+  lua_gc(L, LUA_GCSTEP, (int) ((int64_t) width * height * sizeof(RenColor) / 1024));
   return self;
 }
 
@@ -17,6 +24,23 @@ static int f_load(lua_State *L) {
   const char *filename = luaL_checkstring(L, 1);
   const char *error = NULL;
   RenImage *image = ren_load_image(filename, &error);
+  if (!image) {
+    lua_pushnil(L);
+    lua_pushstring(L, error ? error : "unknown error");
+    return 2;
+  }
+  push_image(L, image);
+  return 1;
+}
+
+
+/* Like `load`, but decodes an encoded image (png, jpg, ...) held in a string. */
+static int f_load_bytes(lua_State *L) {
+  size_t len;
+  const char *bytes = luaL_checklstring(L, 1, &len);
+  luaL_argcheck(L, len <= INT_MAX, 1, "image data too large");
+  const char *error = NULL;
+  RenImage *image = ren_load_image_bytes(bytes, len, &error);
   if (!image) {
     lua_pushnil(L);
     lua_pushstring(L, error ? error : "unknown error");
@@ -56,10 +80,11 @@ static int f_resized(lua_State *L) {
 
 
 static const luaL_Reg lib[] = {
-  { "__gc",     f_gc       },
-  { "load",     f_load     },
-  { "get_size", f_get_size },
-  { "resized",  f_resized  },
+  { "__gc",             f_gc               },
+  { "load",             f_load             },
+  { "load_bytes",       f_load_bytes       },
+  { "get_size",         f_get_size         },
+  { "resized",          f_resized          },
   { NULL, NULL }
 };
 

@@ -35,7 +35,7 @@ typedef struct {
   int type, size;
   RenColor color;
   int tab_width;
-  int text_x, text_y;
+  int origin_x, origin_y;
 } Command;
 
 
@@ -188,6 +188,8 @@ void rencache_draw_image(RenImage *image, int x, int y) {
     cmd->rect = rect;
     cmd->image = image;
     cmd->image_id = ren_get_image_id(image);
+    cmd->origin_x = x;
+    cmd->origin_y = y;
   }
 }
 
@@ -204,8 +206,8 @@ int rencache_draw_text(RenFont *font, const char *text, int x, int y, RenColor c
       cmd->color = color;
       cmd->font = font;
       cmd->rect = bounds;
-      cmd->text_x = x;
-      cmd->text_y = y;
+      cmd->origin_x = x;
+      cmd->origin_y = y;
       cmd->tab_width = ren_get_font_tab_width(font);
     }
   }
@@ -360,7 +362,7 @@ void rencache_end_frame(void) {
         case DRAW_TEXT:
           if (!rects_intersect(cmd->rect, clip)) { break; }
           ren_set_font_tab_width(cmd->font, cmd->tab_width);
-          ren_draw_text(cmd->font, command_text(cmd), cmd->text_x, cmd->text_y, cmd->color);
+          ren_draw_text(cmd->font, command_text(cmd), cmd->origin_x, cmd->origin_y, cmd->color);
           break;
         case DRAW_IMAGE:
           if (!rects_intersect(cmd->rect, clip)) { break; }

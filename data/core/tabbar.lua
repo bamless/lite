@@ -16,6 +16,8 @@ function TabBar:new(node)
   self.node = node
   self.scrollable = true
   self.tooltip = Tooltip()
+  -- Weak: a hidden tab bar isn't updated, so it would keep a closed view alive.
+  self.followed = setmetatable({}, { __mode = "v" })
 end
 
 
@@ -139,8 +141,8 @@ function TabBar:update()
   self:update_hover(mouse.x, mouse.y)
   -- following the active view has to happen here rather than in
   -- `Node:set_active_view`, because opening a document also changes it
-  if self.node.active_view ~= self.last_active_view then
-    self.last_active_view = self.node.active_view
+  if self.node.active_view ~= self.followed.view then
+    self.followed.view = self.node.active_view
     self:scroll_to_tab(self.node:get_view_idx(self.node.active_view))
   end
 
