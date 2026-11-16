@@ -46,7 +46,7 @@ static char* key_name(char *dst, int sym) {
 
 
 static int f_poll_event(lua_State *L) {
-  char buf[16];
+  char buf[64];
   int mx, my, wx, wy;
   SDL_Event e;
 
